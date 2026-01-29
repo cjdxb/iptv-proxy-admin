@@ -381,6 +381,7 @@ ORDER BY duration DESC;
 | `server_name` | 服务器名称 | `IPTV Proxy Server` |
 | `site_name` | 网站名称 | `我的IPTV` |
 | `health_check_interval` | 健康检测间隔（秒） | `1800` |
+| `watch_history_retention_days` | 观看历史保留天数 | `30` |
 
 #### 示例查询
 
@@ -511,9 +512,21 @@ SHOW TABLE STATUS WHERE Name IN ('channels', 'watch_history');
 
 ### 清理数据
 
+**通过 Web 界面清理（推荐）：**
+
+在"系统设置 > 观看历史管理"页面中：
+1. 配置保留天数（7/14/30天）
+2. 查看统计信息（总记录数、最早/最新记录）
+3. 点击"清空全部数据"按钮手动清理所有记录
+
+**通过 SQL 手动清理：**
+
 ```sql
 -- 删除 30 天前的观看历史
 DELETE FROM watch_history WHERE watch_date < DATE_SUB(CURDATE(), INTERVAL 30 DAY);
+
+-- 清空所有观看历史（等同于 Web 界面的清空操作）
+DELETE FROM watch_history;
 
 -- 删除未使用的分组
 DELETE FROM channel_groups
@@ -522,7 +535,12 @@ WHERE id NOT IN (SELECT DISTINCT group_id FROM channels WHERE group_id IS NOT NU
 -- 清理孤立的观看记录（频道已删除）
 DELETE FROM watch_history
 WHERE channel_id NOT IN (SELECT id FROM channels);
+
+-- 删除观看时长为 0 的无效记录
+DELETE FROM watch_history WHERE duration = 0;
 ```
+
+**注意：** 观看历史数据一旦删除无法恢复，建议操作前先备份数据库。
 
 ---
 

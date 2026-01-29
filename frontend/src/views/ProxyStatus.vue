@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-left">
         <h1>📡 代理状态</h1>
-        <p>查看当前 IPTV 代理/转发状态</p>
+        <p>查看当前 IPTV 代理/转发状态和历史记录</p>
       </div>
       <div class="header-actions">
         <el-button @click="fetchStatus" :loading="loading">
@@ -56,12 +56,66 @@
         </el-table-column>
       </el-table>
     </el-card>
-    
+
     <!-- 自动刷新提示 -->
     <div class="auto-refresh-tip">
       <el-icon><InfoFilled /></el-icon>
-      <span>页面每 10 秒自动刷新一次</span>
+      <span>活跃连接列表每 10 秒自动刷新一次</span>
     </div>
+
+    <!-- 历史连接列表 -->
+    <el-card class="connections-card">
+      <template #header>
+        <div class="card-header">
+          <span>📊 历史连接记录</span>
+          <div class="header-actions">
+            <el-tag type="info" size="small">
+              共 {{ historyPagination.total }} 条记录
+            </el-tag>
+            <el-button size="small" @click="fetchHistoryList" :loading="loadingHistory">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+          </div>
+        </div>
+      </template>
+
+      <el-table
+        v-loading="loadingHistory"
+        :data="historyList"
+        empty-text="暂无历史连接记录"
+      >
+        <el-table-column prop="username" label="用户" width="120" />
+        <el-table-column prop="channel_name" label="频道" min-width="200" />
+        <el-table-column label="开始时间" width="180">
+          <template #default="{ row }">
+            {{ formatDateTime(row.start_time) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="结束时间" width="180">
+          <template #default="{ row }">
+            {{ formatDateTime(row.end_time) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="观看时长" width="120">
+          <template #default="{ row }">
+            {{ formatDuration(row.duration) }}
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-container">
+        <el-pagination
+          v-model:current-page="historyPagination.page"
+          v-model:page-size="historyPagination.perPage"
+          :total="historyPagination.total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @current-change="fetchHistoryList"
+          @size-change="fetchHistoryList"
+        />
+      </div>
+    </el-card>
   </div>
 </template>
 
@@ -71,9 +125,17 @@ import { ElMessage } from 'element-plus'
 import api from '@/api'
 
 const loading = ref(false)
+const loadingHistory = ref(false)
 const status = reactive({
   active_connections: 0,
   connections: []
+})
+
+const historyList = ref([])
+const historyPagination = reactive({
+  page: 1,
+  perPage: 20,
+  total: 0
 })
 
 let refreshTimer = null
@@ -101,15 +163,51 @@ function getDuration(startTime) {
   const start = new Date(startTime)
   const now = new Date()
   const diff = Math.floor((now - start) / 1000)
-  
-  if (diff < 60) return `${diff} 秒`
+
+  if (diff < 60) return '小于1分钟'
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟`
   return `${Math.floor(diff / 3600)} 小时 ${Math.floor((diff % 3600) / 60)} 分钟`
 }
 
+// 获取历史连接列表
+async function fetchHistoryList() {
+  loadingHistory.value = true
+  try {
+    const response = await api.history.getList(historyPagination.page, historyPagination.perPage)
+    historyList.value = response.data.items
+    historyPagination.total = response.data.total
+  } catch (error) {
+    ElMessage.error('获取历史连接记录失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+// 格式化日期时间（精确到秒）
+function formatDateTime(dateStr) {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+}
+
+// 格式化观看时长（秒数转换为易读格式）
+function formatDuration(seconds) {
+  if (!seconds) return '-'
+  if (seconds < 60) return '小于1分钟'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`
+  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分钟`
+}
+
 onMounted(() => {
   fetchStatus()
-  // 自动刷新
+  fetchHistoryList()
+  // 自动刷新（仅刷新活跃连接）
   refreshTimer = setInterval(fetchStatus, 10000)
 })
 
@@ -194,11 +292,24 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.card-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination-container {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .auto-refresh-tip {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
   font-size: 13px;
+  margin-bottom: 24px;
 }
 </style>

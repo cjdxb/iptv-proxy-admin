@@ -283,6 +283,112 @@
 
 ---
 
+## 观看历史管理接口 - `/history`
+
+### 获取历史连接列表
+- **接口**: `GET /api/history/list`
+- **描述**: 获取观看历史连接记录列表（仅显示观看时长 > 0 的记录）
+- **参数**:
+  - Query: `page` (可选): 页码，默认为1
+  - Query: `per_page` (可选): 每页数量，默认为20
+- **响应**:
+  ```json
+  {
+    "items": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "username": "admin",
+        "channel_id": 10,
+        "channel_name": "CCTV-1",
+        "start_time": "2026-01-29T10:30:00Z",
+        "end_time": "2026-01-29T11:15:00Z",
+        "duration": 2700,
+        "watch_date": "2026-01-29"
+      }
+    ],
+    "total": 100,
+    "page": 1,
+    "per_page": 20,
+    "pages": 5
+  }
+  ```
+
+### 获取观看历史统计
+- **接口**: `GET /api/history/stats`
+- **描述**: 获取观看历史统计信息（总记录数、最早记录、最新记录）
+- **参数**: 无
+- **响应**:
+  ```json
+  {
+    "total_count": 1250,
+    "earliest_date": "2026-01-15T08:30:00Z",
+    "latest_date": "2026-01-29T14:20:00Z"
+  }
+  ```
+
+### 清空观看历史
+- **接口**: `POST /api/history/cleanup`
+- **描述**: 清空所有观看历史记录（危险操作，不可恢复）
+- **参数**: 无
+- **响应**:
+  ```json
+  {
+    "message": "成功清空 1250 条观看历史记录",
+    "deleted_count": 1250,
+    "count_before": 1250,
+    "count_after": 0
+  }
+  ```
+
+---
+
+## 导入导出接口 - `/import-export`
+
+### 导入频道列表
+- **接口**: `POST /api/import-export/import`
+- **描述**: 从上传的文件或文本内容导入频道列表
+- **参数**:
+  - Request Body (JSON):
+    ```json
+    {
+      "content": "频道列表文本内容",
+      "format": "m3u",
+      "overwrite": false,
+      "auto_create_group": true,
+      "include_regex": "",
+      "exclude_regex": ""
+    }
+    ```
+  - 或 FormData: `file` (multipart/form-data)
+- **响应**: `{success: Boolean, message: String, data: ImportResultObject}`
+
+### 从 URL 导入频道列表
+- **接口**: `POST /api/import-export/import-url`
+- **描述**: 从指定 URL 拉取并导入频道列表
+- **参数**:
+  - Request Body (JSON):
+    ```json
+    {
+      "url": "http://example.com/playlist.m3u",
+      "overwrite": false,
+      "auto_create_group": true,
+      "format": "auto",
+      "include_regex": "",
+      "exclude_regex": ""
+    }
+    ```
+- **响应**: `{success: Boolean, message: String, data: ImportResultObject}`
+
+### 导出频道列表
+- **接口**: `GET /api/import-export/export`
+- **描述**: 导出频道列表为指定格式
+- **参数**:
+  - Query: `format` (必填): 导出格式，可选值：`m3u`, `txt`
+- **响应**: 文件流 (Content-Type: application/octet-stream)
+
+---
+
 ## 错误码说明
 
 | 错误码 | 说明 |

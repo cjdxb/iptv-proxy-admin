@@ -19,6 +19,7 @@ class Settings(db.Model):
     KEY_SERVER_NAME = 'server_name'
     KEY_HEALTH_CHECK_INTERVAL = 'health_check_interval'
     KEY_SITE_NAME = 'site_name'
+    KEY_WATCH_HISTORY_RETENTION_DAYS = 'watch_history_retention_days'
     
     @classmethod
     def get(cls, key, default=None):

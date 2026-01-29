@@ -81,13 +81,74 @@
           </el-form-item>
         </el-form>
       </el-card>
+
+      <!-- 观看历史设置 -->
+      <el-card class="settings-card">
+        <template #header>
+          <div class="card-header">
+            <span>📊 观看历史管理</span>
+          </div>
+        </template>
+        <el-form label-width="120px">
+          <el-form-item label="数据保留时长">
+            <el-radio-group v-model="settings.watch_history_retention_days">
+              <el-radio :label="7">保留 7 天</el-radio>
+              <el-radio :label="14">保留 14 天</el-radio>
+              <el-radio :label="30">保留 30 天</el-radio>
+            </el-radio-group>
+            <div style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
+              此设置用于自动清理策略（如需启用自动清理，请在环境变量中配置）
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="saveRetentionDays" :loading="savingRetention">
+              保存设置
+            </el-button>
+          </el-form-item>
+          <el-divider />
+          <el-form-item label="数据统计">
+            <div class="history-stats" v-if="historyStats">
+              <div class="stat-item">
+                <span class="stat-label">总记录数：</span>
+                <span class="stat-value">{{ historyStats.total_count }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">最早记录：</span>
+                <span class="stat-value">{{ formatDate(historyStats.earliest_date) }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">最新记录：</span>
+                <span class="stat-value">{{ formatDate(historyStats.latest_date) }}</span>
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item label="数据清理">
+            <el-button type="danger" @click="confirmCleanupAll" :loading="cleaning">
+              清空全部数据
+            </el-button>
+            <el-button @click="fetchHistoryStats" :loading="loadingStats">
+              刷新统计
+            </el-button>
+          </el-form-item>
+          <el-alert
+            type="error"
+            :closable="false"
+            show-icon
+            style="margin-top: 12px"
+          >
+            <template #title>
+              ⚠️ 清空操作将删除所有观看历史记录，此操作不可恢复！请谨慎操作！
+            </template>
+          </el-alert>
+        </el-form>
+      </el-card>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import api from '@/api'
@@ -100,11 +161,17 @@ const saving = ref(false)
 const savingSiteName = ref(false)
 const changingPassword = ref(false)
 const changingUsername = ref(false)
+const savingRetention = ref(false)
+const cleaning = ref(false)
+const loadingStats = ref(false)
 
 const settings = reactive({
   epg_url: '',
-  site_name: ''
+  site_name: '',
+  watch_history_retention_days: 30
 })
+
+const historyStats = ref(null)
 
 const usernameForm = reactive({
   username: ''
@@ -124,7 +191,15 @@ async function fetchSettings() {
     if (!settings.site_name) {
       settings.site_name = siteStore.siteName
     }
+    // 设置保留天数默认值
+    if (settings.watch_history_retention_days) {
+      settings.watch_history_retention_days = parseInt(settings.watch_history_retention_days)
+    } else {
+      settings.watch_history_retention_days = 30
+    }
     usernameForm.username = authStore.user?.username || ''
+    // 同时获取历史统计
+    await fetchHistoryStats()
   } catch (error) {
     ElMessage.error('获取设置失败')
   } finally {
@@ -195,17 +270,17 @@ async function changePassword() {
     ElMessage.warning('请填写原密码和新密码')
     return
   }
-  
+
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
     ElMessage.warning('两次输入的密码不一致')
     return
   }
-  
+
   if (passwordForm.newPassword.length < 6) {
     ElMessage.warning('新密码长度不能少于6位')
     return
   }
-  
+
   changingPassword.value = true
   try {
     await api.auth.changePassword(passwordForm.oldPassword, passwordForm.newPassword)
@@ -218,6 +293,84 @@ async function changePassword() {
   } finally {
     changingPassword.value = false
   }
+}
+
+// 保存观看历史保留天数
+async function saveRetentionDays() {
+  savingRetention.value = true
+  try {
+    await api.settings.updateOne('watch_history_retention_days', settings.watch_history_retention_days)
+    ElMessage.success('保存成功')
+    await fetchHistoryStats()
+  } catch (error) {
+    ElMessage.error('保存失败')
+  } finally {
+    savingRetention.value = false
+  }
+}
+
+// 获取观看历史统计
+async function fetchHistoryStats() {
+  loadingStats.value = true
+  try {
+    const response = await api.history.getStats()
+    historyStats.value = response.data
+  } catch (error) {
+    console.error('获取历史统计失败', error)
+  } finally {
+    loadingStats.value = false
+  }
+}
+
+// 确认清空全部数据
+async function confirmCleanupAll() {
+  if (!historyStats.value || historyStats.value.total_count === 0) {
+    ElMessage.info('没有观看历史数据')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要清空全部 ${historyStats.value.total_count} 条观看历史记录吗？此操作不可恢复！`,
+      '⚠️ 危险操作确认',
+      {
+        confirmButtonText: '确定清空',
+        cancelButtonText: '取消',
+        type: 'error',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    await cleanupAllHistory()
+  } catch {
+    // 用户取消
+  }
+}
+
+// 清空全部观看历史
+async function cleanupAllHistory() {
+  cleaning.value = true
+  try {
+    const response = await api.history.cleanup()
+    ElMessage.success(response.data.message)
+    await fetchHistoryStats()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || '清空失败')
+  } finally {
+    cleaning.value = false
+  }
+}
+
+// 格式化日期时间（精确到秒）
+function formatDate(dateStr) {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
 onMounted(fetchSettings)
@@ -269,5 +422,30 @@ onMounted(fetchSettings)
 
 .user-row .el-input {
   flex: 1;
+}
+
+.history-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.stat-value {
+  font-weight: 600;
+  font-size: 14px;
 }
 </style>

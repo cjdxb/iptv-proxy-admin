@@ -13,10 +13,14 @@ from app.config import config
 scheduler = None
 
 
-def check_channel_health(channel, max_retries=1):
+def check_channel_health(channel, max_retries=None):
     """检测单个频道健康状态"""
     from app import db
-    
+
+    # 从配置中读取重试次数，如果未指定则使用配置默认值
+    if max_retries is None:
+        max_retries = config.get('health_check', {}).get('max_retries', 1)
+
     timeout = config.get('health_check', {}).get('timeout', 10)
     is_healthy = False
     

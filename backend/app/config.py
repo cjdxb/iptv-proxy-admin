@@ -41,7 +41,8 @@ def load_config():
         'health_check': {
             'enabled': os.getenv('HEALTH_CHECK_ENABLED', 'true').lower() == 'true',
             'interval': int(os.getenv('HEALTH_CHECK_INTERVAL', 1800)),
-            'timeout': int(os.getenv('HEALTH_CHECK_TIMEOUT', 10))
+            'timeout': int(os.getenv('HEALTH_CHECK_TIMEOUT', 10)),
+            'max_retries': int(os.getenv('HEALTH_CHECK_MAX_RETRIES', 1))
         },
         'proxy': {
             'buffer_size': int(os.getenv('PROXY_BUFFER_SIZE', 8192))

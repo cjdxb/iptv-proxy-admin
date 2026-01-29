@@ -147,6 +147,8 @@ HEALTH_CHECK_INTERVAL=1800
 WATCH_HISTORY_SAVE_INTERVAL=60
 ```
 
+> 📖 **详细配置说明：** 完整的环境变量配置和性能调优建议请参考 [配置文档](docs/configuration.md)
+
 #### 3. 启动后端
 
 ```bash
@@ -264,6 +266,7 @@ iptv-proxy-admin/
 ├── docs/                      # 项目文档
 │   ├── api-reference.md      # API 文档
 │   ├── database.md           # 数据库文档
+│   ├── configuration.md      # 配置文档
 │   └── deployment-guide.md   # 部署指南
 │
 ├── .gitignore                # Git 忽略文件
@@ -314,6 +317,18 @@ db.session.commit()
 ```
 
 数据库文档：[docs/database.md](docs/database.md)
+
+### 配置说明
+
+系统通过环境变量进行配置，支持以下配置项：
+
+- **服务器配置** - 主机、端口、调试模式
+- **数据库配置** - SQLite / MySQL 配置
+- **健康检测配置** - 间隔、超时、重试次数
+- **观看历史配置** - 自动保存间隔、保留天数
+- **UDPxy 配置** - 组播转单播代理
+
+配置文档：[docs/configuration.md](docs/configuration.md)
 
 ## 部署指南
 
@@ -429,6 +444,20 @@ UDPXY_URL=http://localhost:4022
 - HTTP/HTTPS：检查 URL 是否可访问
 - RTP/UDP：确保 UDPxy 已配置且运行
 - 调整检测超时：`HEALTH_CHECK_TIMEOUT=10`
+- 调整重试次数：`HEALTH_CHECK_MAX_RETRIES=2`
+
+### 5. 如何修改配置？
+
+**配置文件位置：**
+- 后端：`backend/.env`
+- 前端：`frontend/.env`
+
+**修改步骤：**
+1. 编辑 `.env` 文件
+2. 修改需要的配置项
+3. 重启服务使配置生效
+
+> 📖 **详细说明：** 所有配置项的详细说明和调优建议请参考 [配置文档](docs/configuration.md)
 
 ## 许可证
 

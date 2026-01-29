@@ -67,7 +67,7 @@ def create_app():
         return User.query.get(int(user_id))
     
     # 注册蓝图
-    from .api import auth, channels, groups, settings, subscription, proxy, health, dashboard
+    from .api import auth, channels, groups, settings, subscription, proxy, health, dashboard, history
     from .services import import_export
     app.register_blueprint(auth.bp)
     app.register_blueprint(channels.bp)
@@ -77,6 +77,7 @@ def create_app():
     app.register_blueprint(proxy.bp)
     app.register_blueprint(health.bp)
     app.register_blueprint(dashboard.bp)
+    app.register_blueprint(history.bp)
     app.register_blueprint(import_export.bp)
     
     # 创建数据库表

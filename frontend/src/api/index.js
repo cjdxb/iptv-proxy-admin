@@ -120,6 +120,13 @@ const api = {
                 exclude_regex: excludeRegex
             }),
         export: (format) => http.get(`/import-export/export?format=${format}`, { responseType: 'blob' })
+    },
+
+    // 观看历史
+    history: {
+        cleanup: () => http.post('/history/cleanup'),
+        getStats: () => http.get('/history/stats'),
+        getList: (page = 1, perPage = 20) => http.get('/history/list', { params: { page, per_page: perPage } })
     }
 }
 
