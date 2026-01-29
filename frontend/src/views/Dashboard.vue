@@ -237,10 +237,15 @@ const chartOption = computed(() => {
     },
     yAxis: {
       type: 'value',
+      min: 0,
+      minInterval: 60,
       axisLine: { show: false },
       axisLabel: {
         color: '#64748b',
-        formatter: (value) => formatDuration(value, true)
+        formatter: (value) => {
+          if (value === 0) return '0'
+          return formatDuration(value, true)
+        }
       },
       splitLine: { lineStyle: { color: 'rgba(100, 116, 139, 0.2)' } }
     },
@@ -269,11 +274,11 @@ const chartOption = computed(() => {
 
 function formatDuration(seconds, short = false) {
   if (!seconds || seconds <= 0) return short ? '0' : '0 分钟'
-  if (seconds < 60) return short ? '<1m' : '<1 分钟'
-  
+  if (seconds < 60) return short ? '1m' : '1 分钟'
+
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
-  
+
   if (short) {
     if (hours > 0) return `${hours}h`
     return `${minutes}m`

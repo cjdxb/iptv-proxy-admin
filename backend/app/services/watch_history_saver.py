@@ -25,7 +25,7 @@ def save_active_watch_records():
 
     saved_count = 0
     cleaned_count = 0
-    now = datetime.utcnow()
+    now = datetime.now()
 
     for connection_id, conn_info in list(active_connections.items()):
         watch_record_id = conn_info.get('watch_record_id')
@@ -37,10 +37,17 @@ def save_active_watch_records():
             if record:
                 # 更新结束时间和时长（增量保存）
                 record.end_time = now
-                record.duration = int((record.end_time - record.start_time).total_seconds())
+                calculated_duration = int((record.end_time - record.start_time).total_seconds())
+
+                # 防止负数时长（可能由于系统时间回退或时区问题导致）
+                if calculated_duration < 0:
+                    logger.warning(f"观看记录时长为负数: connection_id={connection_id}, start={record.start_time}, end={record.end_time}, duration={calculated_duration}，已设置为0")
+                    record.duration = 0
+                else:
+                    record.duration = calculated_duration
 
                 # 更新连接的最后更新时间
-                conn_info['last_update'] = now.isoformat() + 'Z'
+                conn_info['last_update'] = now.isoformat()
                 saved_count += 1
 
                 # 清理超过 2 小时没更新的僵尸连接（可能是异常断开）

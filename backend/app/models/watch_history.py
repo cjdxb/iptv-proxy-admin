@@ -31,8 +31,17 @@ class WatchHistory(db.Model):
     
     def finish(self):
         """结束观看，计算时长"""
+        from loguru import logger
+
         self.end_time = datetime.now()
-        self.duration = int((self.end_time - self.start_time).total_seconds())
+        calculated_duration = int((self.end_time - self.start_time).total_seconds())
+
+        # 防止负数时长（可能由于系统时间回退或时区问题导致）
+        if calculated_duration < 0:
+            logger.warning(f"观看记录时长为负数: start={self.start_time}, end={self.end_time}, duration={calculated_duration}，已设置为0")
+            self.duration = 0
+        else:
+            self.duration = calculated_duration
     
     def to_dict(self):
         return {
