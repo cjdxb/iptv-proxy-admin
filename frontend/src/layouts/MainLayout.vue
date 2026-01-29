@@ -100,6 +100,40 @@
           </transition>
         </router-view>
       </main>
+
+      <!-- 底部版权信息 -->
+      <footer class="app-footer">
+        <div class="footer-content">
+          <div class="footer-left">
+            <span class="copyright">© 2026 IPTV Proxy Admin</span>
+            <span class="separator">•</span>
+            <span class="version">v{{ appVersion }}</span>
+          </div>
+          <div class="footer-right">
+            <a
+              href="https://github.com/cjdxb/iptv-proxy-admin"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="footer-link"
+              title="GitHub"
+            >
+              <span class="link-icon">🔗</span>
+              <span>GitHub</span>
+            </a>
+            <span class="separator">•</span>
+            <a
+              href="https://github.com/cjdxb/iptv-proxy-admin/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="footer-link license"
+              title="AGPL v3 License"
+            >
+              <span class="link-icon">📜</span>
+              <span>AGPL v3</span>
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   </div>
 </template>
@@ -116,6 +150,9 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const siteStore = useSiteStore()
+
+// 应用版本号
+const appVersion = __APP_VERSION__
 
 // 侧边栏折叠状态
 const isCollapsed = ref(false)
@@ -456,5 +493,87 @@ onUnmounted(() => {
   .main-content {
     padding: 16px;
   }
+
+  .app-footer {
+    padding: 12px 16px;
+  }
+
+  .footer-content {
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .footer-left,
+  .footer-right {
+    justify-content: center;
+  }
+}
+
+/* 底部版权信息 */
+.app-footer {
+  padding: 16px 32px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.footer-left,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copyright {
+  font-weight: 500;
+}
+
+.version {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 6px;
+  background: rgba(100, 116, 139, 0.1);
+  border-radius: 4px;
+}
+
+.separator {
+  color: var(--border-color);
+  margin: 0 2px;
+}
+
+.footer-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.2s ease;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.footer-link:hover {
+  color: var(--accent-primary);
+  background: rgba(100, 116, 139, 0.08);
+  transform: translateY(-1px);
+}
+
+.footer-link.license:hover {
+  color: var(--success);
+}
+
+.link-icon {
+  font-size: 13px;
 }
 </style>
