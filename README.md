@@ -443,8 +443,8 @@ UDPXY_URL=http://localhost:4022
 **检查配置：**
 - HTTP/HTTPS：检查 URL 是否可访问
 - RTP/UDP：确保 UDPxy 已配置且运行
-- 调整检测超时：`HEALTH_CHECK_TIMEOUT=10`
-- 调整重试次数：`HEALTH_CHECK_MAX_RETRIES=2`
+- 调整检测超时
+- 调整重试次数
 
 ### 5. 如何修改配置？
 
