@@ -22,11 +22,12 @@ active_connections = {}
 
 def get_udpxy_url(original_url):
     """将组播地址转换为 UDPxy 地址"""
-    udpxy_config = config.get('udpxy', {})
-    if not udpxy_config.get('enabled', False):
+    from app.config import get_udpxy_enabled, get_udpxy_url as get_udpxy_url_config
+
+    if not get_udpxy_enabled():
         return None
-    
-    udpxy_base = udpxy_config.get('url', '').rstrip('/')
+
+    udpxy_base = get_udpxy_url_config().rstrip('/')
     
     # 解析 rtp:// 或 udp:// 地址
     # 格式: rtp://239.0.0.1:5000 或 udp://@239.0.0.1:5000
@@ -89,16 +90,16 @@ def stream_channel(channel_id):
         'username': user.username,
         'channel_id': channel.id,
         'channel_name': channel.name,
-        'start_time': datetime.utcnow().isoformat() + 'Z',
+        'start_time': datetime.now().isoformat(),
         'watch_record_id': watch_record_id
     }
     
     def generate():
         try:
-            # 代理请求
-            proxy_config = config.get('proxy', {})
-            buffer_size = proxy_config.get('buffer_size', 8192)
-            
+            # 从配置获取缓冲区大小（优先从数据库读取）
+            from app.config import get_proxy_buffer_size
+            buffer_size = get_proxy_buffer_size()
+
             with requests.get(stream_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=buffer_size):

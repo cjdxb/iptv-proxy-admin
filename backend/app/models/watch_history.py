@@ -26,12 +26,12 @@ class WatchHistory(db.Model):
     def __init__(self, user_id, channel_id, start_time=None):
         self.user_id = user_id
         self.channel_id = channel_id
-        self.start_time = start_time or datetime.utcnow()
+        self.start_time = start_time or datetime.now()
         self.watch_date = self.start_time.date()
     
     def finish(self):
         """结束观看，计算时长"""
-        self.end_time = datetime.utcnow()
+        self.end_time = datetime.now()
         self.duration = int((self.end_time - self.start_time).total_seconds())
     
     def to_dict(self):

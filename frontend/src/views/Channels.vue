@@ -23,15 +23,22 @@
     
     <!-- 筛选栏 -->
     <div class="filter-bar">
-      <el-input
-        v-model="filters.search"
-        placeholder="搜索频道..."
-        :prefix-icon="Search"
-        clearable
-        class="search-input"
-        @input="debouncedSearch"
-      />
-        <el-select v-model="filters.groupId" placeholder="选择分组" clearable @change="fetchChannels">
+      <div class="filter-row">
+        <el-input
+          v-model="filters.search"
+          placeholder="搜索频道..."
+          :prefix-icon="Search"
+          clearable
+          class="search-input"
+          @input="debouncedSearch"
+        />
+        <el-button @click="runHealthCheck" :loading="healthCheckLoading">
+          <el-icon><Refresh /></el-icon>
+          检测全部频道
+        </el-button>
+      </div>
+      <div class="filter-row">
+        <el-select v-model="filters.groupId" placeholder="分组" clearable @change="fetchChannels" class="filter-select">
           <el-option label="全部分组" :value="''" />
           <el-option
             v-for="group in groups"
@@ -40,15 +47,24 @@
             :value="group.id"
           />
         </el-select>
-        <el-select v-model="filters.isActive" placeholder="状态" clearable @change="fetchChannels">
-          <el-option label="全部状态" :value="''" />
+        <el-select v-model="filters.protocol" placeholder="协议" clearable @change="fetchChannels" class="filter-select">
+          <el-option label="全部协议" :value="''" />
+          <el-option label="HTTP" value="http" />
+          <el-option label="HTTPS" value="https" />
+          <el-option label="RTP" value="rtp" />
+          <el-option label="UDP" value="udp" />
+        </el-select>
+        <el-select v-model="filters.isActive" placeholder="启用状态" clearable @change="fetchChannels" class="filter-select">
+          <el-option label="全部" :value="''" />
           <el-option label="已启用" :value="true" />
           <el-option label="已禁用" :value="false" />
         </el-select>
-      <el-button @click="runHealthCheck" :loading="healthCheckLoading">
-        <el-icon><Refresh /></el-icon>
-        检测全部频道
-      </el-button>
+        <el-select v-model="filters.healthStatus" placeholder="健康状态" clearable @change="fetchChannels" class="filter-select">
+          <el-option label="全部" :value="''" />
+          <el-option label="正常" :value="true" />
+          <el-option label="离线" :value="false" />
+        </el-select>
+      </div>
     </div>
     
     <!-- 频道表格 -->
@@ -299,7 +315,9 @@ const selectedChannels = ref([])
 const filters = reactive({
   search: '',
   groupId: null,
-  isActive: null
+  protocol: '',
+  isActive: null,
+  healthStatus: null
 })
 
 // 分页
@@ -364,7 +382,9 @@ async function fetchChannels() {
       per_page: pagination.perPage,
       search: filters.search || undefined,
       group_id: filters.groupId === '' ? undefined : filters.groupId,
-      is_active: filters.isActive === '' ? undefined : filters.isActive
+      protocol: filters.protocol || undefined,
+      is_active: filters.isActive === '' ? undefined : filters.isActive,
+      is_healthy: filters.healthStatus === '' ? undefined : filters.healthStatus
     })
     channels.value = response.data.items
     pagination.total = response.data.total
@@ -669,13 +689,25 @@ onMounted(() => {
 
 .filter-bar {
   display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-bottom: 24px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
   flex-wrap: wrap;
 }
 
 .search-input {
-  width: 280px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.filter-select {
+  width: 160px;
 }
 
 .channels-table {

@@ -79,7 +79,9 @@ const api = {
         getAll: () => http.get('/settings'),
         get: (key) => http.get(`/settings/${key}`),
         update: (settings) => http.post('/settings', settings),
-        updateOne: (key, value) => http.put(`/settings/${key}`, { value })
+        updateOne: (key, value) => http.put(`/settings/${key}`, { value }),
+        reload: () => http.post('/settings/reload'),
+        testUdpxy: (url) => http.post('/settings/test-udpxy', { url })
     },
 
     // 订阅

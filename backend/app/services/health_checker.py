@@ -6,6 +6,7 @@
 import requests
 import socket
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 from app.config import config
@@ -16,12 +17,13 @@ scheduler = None
 def check_channel_health(channel, max_retries=None):
     """检测单个频道健康状态"""
     from app import db
+    from app.config import get_health_check_timeout, get_health_check_max_retries
 
-    # 从配置中读取重试次数，如果未指定则使用配置默认值
+    # 从配置中读取重试次数和超时时间（优先从数据库读取）
     if max_retries is None:
-        max_retries = config.get('health_check', {}).get('max_retries', 1)
+        max_retries = get_health_check_max_retries()
 
-    timeout = config.get('health_check', {}).get('timeout', 10)
+    timeout = get_health_check_timeout()
     is_healthy = False
     
     for attempt in range(max_retries + 1):
@@ -32,8 +34,8 @@ def check_channel_health(channel, max_retries=None):
                 is_healthy = response.status_code < 400
             elif channel.protocol in ('rtp', 'udp'):
                 # RTP/UDP 源健康检测
-                udpxy_config = config.get('udpxy', {})
-                
+                from app.config import get_udpxy_enabled, get_udpxy_url
+
                 # 解析组播地址
                 if channel.url.startswith('rtp://'):
                     addr = channel.url[6:]
@@ -44,9 +46,9 @@ def check_channel_health(channel, max_retries=None):
                 else:
                     addr = channel.url
                 
-                if udpxy_config.get('enabled', False):
+                if get_udpxy_enabled():
                     # 方式1: 通过 UDPxy 代理请求实际流数据验证
-                    udpxy_base = udpxy_config.get('url', '').rstrip('/')
+                    udpxy_base = get_udpxy_url().rstrip('/')
                     udpxy_stream_url = f"{udpxy_base}/udp/{addr}"
                     
                     try:
@@ -123,24 +125,46 @@ def check_channel_health(channel, max_retries=None):
 
 
 def check_all_channels():
-    """检测所有活跃频道"""
+    """检测所有活跃频道（多线程）"""
     from app.models.channel import Channel
-    
+    from app.config import get_health_check_threads
+
     channels = Channel.query.filter_by(is_active=True).all()
-    
+
     results = {
         'total': len(channels),
         'healthy': 0,
         'unhealthy': 0
     }
-    
-    for channel in channels:
-        is_healthy = check_channel_health(channel)
-        if is_healthy:
-            results['healthy'] += 1
-        else:
-            results['unhealthy'] += 1
-    
+
+    if not channels:
+        return results
+
+    # 获取线程数配置
+    max_workers = get_health_check_threads()
+    logger.info(f"开始多线程健康检测，线程数: {max_workers}，频道数: {len(channels)}")
+
+    # 使用线程池进行并发检测
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 提交所有检测任务
+        future_to_channel = {
+            executor.submit(check_channel_health, channel): channel
+            for channel in channels
+        }
+
+        # 收集结果
+        for future in as_completed(future_to_channel):
+            channel = future_to_channel[future]
+            try:
+                is_healthy = future.result()
+                if is_healthy:
+                    results['healthy'] += 1
+                else:
+                    results['unhealthy'] += 1
+            except Exception as e:
+                logger.error(f"检测频道 {channel.name} 时发生异常: {e}")
+                results['unhealthy'] += 1
+
     return results
 
 

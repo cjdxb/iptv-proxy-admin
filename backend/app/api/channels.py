@@ -18,27 +18,35 @@ def get_channels():
     # 查询参数
     group_id = request.args.get('group_id', type=int)
     is_active = request.args.get('is_active', type=lambda x: x.lower() == 'true')
+    protocol = request.args.get('protocol', '')
+    is_healthy = request.args.get('is_healthy', type=lambda x: x.lower() == 'true')
     search = request.args.get('search', '')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 50, type=int)
-    
+
     query = Channel.query
-    
+
     if group_id:
         query = query.filter_by(group_id=group_id)
-    
+
     if is_active is not None:
         query = query.filter_by(is_active=is_active)
-    
+
+    if protocol:
+        query = query.filter_by(protocol=protocol.lower())
+
+    if is_healthy is not None:
+        query = query.filter_by(is_healthy=is_healthy)
+
     if search:
         query = query.filter(Channel.name.contains(search))
-    
+
     # 排序
     query = query.order_by(Channel.sort_order, Channel.id)
-    
+
     # 分页
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
     return jsonify({
         'items': [ch.to_dict() for ch in pagination.items],
         'total': pagination.total,

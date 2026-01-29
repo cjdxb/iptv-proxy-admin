@@ -276,14 +276,41 @@ SELECT * FROM channels ORDER BY updated_at DESC LIMIT 10;
 #### 数据更新机制
 
 **自动保存机制（v1.1.0+）：**
-1. 用户开始观看时创建记录（`start_time`）
-2. 每 60 秒自动更新 `end_time` 和 `duration`
-3. 用户断开连接时最后一次更新
+
+1. **观看开始（用户请求流代理）**
+   - 创建新的 `watch_history` 记录
+   - 设置 `start_time` = 当前时间
+   - 设置 `watch_date` = 开始日期
+   - `duration` 初始值 = 0
+   - `end_time` 初始值 = NULL
+
+2. **定时更新（每 WATCH_HISTORY_SAVE_INTERVAL 秒）**
+   - 触发观看记录更新（当连接仍活跃时）
+   - 更新 `end_time` = 当前时间
+   - 计算 `duration` = (end_time - start_time) 秒数
+   - 保存到数据库
+
+3. **观看结束（连接断开）**
+   - 调用 `finish()` 方法
+   - 最后一次更新 `end_time` 和 `duration`
+   - 记录最终保存到数据库
+
+**配置项：**
+- `WATCH_HISTORY_SAVE_INTERVAL`: 自动保存间隔（秒），默认 60 秒
+- 配置位置：`backend/.env` 文件
+- 取值范围：30-300 秒
 
 **优点：**
-- 实时统计观看数据
-- 防止服务器重启丢失数据
-- 准确记录观看时长
+- ✅ 实时统计观看数据
+- ✅ 防止服务器重启丢失数据
+- ✅ 准确记录观看时长
+- ✅ 支持断线重连场景
+- ✅ 可查询正在观看的用户（end_time 为 NULL）
+
+**数据完整性：**
+- 观看时长 > 0 的记录才会在前端显示
+- 异常断开的连接会保留最后一次更新的数据
+- 短时间观看（<保存间隔）可能记录为 0 秒
 
 #### 关联关系
 
@@ -375,13 +402,23 @@ ORDER BY duration DESC;
 
 #### 预定义配置键
 
-| 配置键 | 说明 | 示例值 |
-|--------|------|--------|
-| `epg_url` | EPG 节目单 XML 地址 | `http://epg.example.com/guide.xml` |
-| `server_name` | 服务器名称 | `IPTV Proxy Server` |
-| `site_name` | 网站名称 | `我的IPTV` |
-| `health_check_interval` | 健康检测间隔（秒） | `1800` |
-| `watch_history_retention_days` | 观看历史保留天数 | `30` |
+| 配置键 | 说明 | 示例值 | Web 配置 |
+|--------|------|--------|---------|
+| `epg_url` | EPG 节目单 XML 地址 | `http://epg.example.com/guide.xml` | ❌ 否 |
+| `server_name` | 服务器名称 | `IPTV Proxy Server` | ❌ 否 |
+| `site_name` | 网站名称 | `我的IPTV` | ✅ 是 |
+| `health_check_interval` | 健康检测间隔（秒） | `1800` | ❌ 否 |
+| `watch_history_retention_days` | 观看历史保留天数 | `30` | ❌ 否 |
+| `proxy_buffer_size` | 代理缓冲区大小（字节） | `8192` | ✅ 是 |
+| `health_check_timeout` | 健康检测超时时间（秒） | `10` | ✅ 是 |
+| `health_check_max_retries` | 健康检测重试次数 | `1` | ✅ 是 |
+| `health_check_threads` | 健康检测线程数 | `3` | ✅ 是 |
+| `udpxy_enabled` | 是否启用 UDPxy | `true` / `false` | ✅ 是 |
+| `udpxy_url` | UDPxy 服务地址 | `http://localhost:3680` | ✅ 是 |
+
+**说明：**
+- ✅ **可在 Web 界面配置**：系统设置页面可直接修改，立即生效
+- ❌ **不可在 Web 界面配置**：需通过数据库或配置文件修改
 
 #### 示例查询
 

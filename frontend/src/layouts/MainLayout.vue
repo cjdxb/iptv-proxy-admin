@@ -1,50 +1,60 @@
 <template>
   <div class="main-layout">
     <!-- 侧边栏 -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ 'is-collapsed': isCollapsed }">
       <div class="logo">
         <span class="logo-emoji">📺</span>
-        <span class="logo-text">{{ siteStore.siteName }}</span>
+        <span class="logo-text" v-show="!isCollapsed">{{ siteStore.siteName }}</span>
       </div>
-      
+
       <el-menu
         :default-active="activeMenu"
         router
         class="sidebar-menu"
       >
-        <el-menu-item index="/">
+        <el-menu-item index="/" :title="isCollapsed ? '仪表盘' : ''">
           <span class="menu-emoji">📊</span>
-          <span>仪表盘</span>
+          <span class="menu-text">仪表盘</span>
         </el-menu-item>
-        <el-menu-item index="/channels">
+        <el-menu-item index="/channels" :title="isCollapsed ? '频道管理' : ''">
           <span class="menu-emoji">📺</span>
-          <span>频道管理</span>
+          <span class="menu-text">频道管理</span>
         </el-menu-item>
-        <el-menu-item index="/groups">
+        <el-menu-item index="/groups" :title="isCollapsed ? '分组管理' : ''">
           <span class="menu-emoji">📁</span>
-          <span>分组管理</span>
+          <span class="menu-text">分组管理</span>
         </el-menu-item>
-        <el-menu-item index="/subscription">
+        <el-menu-item index="/subscription" :title="isCollapsed ? '订阅链接' : ''">
           <span class="menu-emoji">🔗</span>
-          <span>订阅链接</span>
+          <span class="menu-text">订阅链接</span>
         </el-menu-item>
-        <el-menu-item index="/proxy-status">
+        <el-menu-item index="/proxy-status" :title="isCollapsed ? '代理状态' : ''">
           <span class="menu-emoji">📡</span>
-          <span>代理状态</span>
+          <span class="menu-text">代理状态</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
+        <el-menu-item index="/settings" :title="isCollapsed ? '系统设置' : ''">
           <span class="menu-emoji">⚙️</span>
-          <span>系统设置</span>
+          <span class="menu-text">系统设置</span>
         </el-menu-item>
       </el-menu>
-      
-      <div class="sidebar-footer">
-        <!-- 主题切换 -->
-        <div class="theme-switcher">
+
+      <!-- 折叠按钮 -->
+      <div class="collapse-btn-wrapper">
+        <div class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'">
+          <span class="collapse-icon">{{ isCollapsed ? '»' : '«' }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <div class="content-wrapper">
+      <!-- 顶部栏 -->
+      <header class="top-bar">
+        <div class="top-bar-right">
+          <!-- 主题切换 -->
           <el-dropdown trigger="click" @command="handleThemeChange">
-            <div class="theme-btn">
-              <span class="theme-emoji">{{ themeStore.theme === 'light' ? '☀️' : '🌙' }}</span>
-              <span>{{ themeLabel }}</span>
+            <div class="header-btn" :title="themeLabel">
+              <span class="btn-icon">{{ themeStore.theme === 'light' ? '☀️' : '🌙' }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -60,40 +70,42 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-        </div>
-        
-        <!-- 用户信息 -->
-        <el-dropdown trigger="click" @command="handleCommand">
-          <div class="user-info">
-            <div class="user-avatar">
-              {{ authStore.user?.username?.[0]?.toUpperCase() || 'U' }}
+
+          <!-- 用户信息 -->
+          <el-dropdown trigger="click" @command="handleCommand">
+            <div class="header-btn user-btn" :title="authStore.user?.username">
+              <div class="user-avatar">
+                {{ authStore.user?.username?.[0]?.toUpperCase() || 'U' }}
+              </div>
+              <span class="username" v-show="authStore.user?.username">
+                {{ authStore.user?.username }}
+              </span>
             </div>
-            <span class="username">{{ authStore.user?.username }}</span>
-          </div>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">
-                👋 退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-    </aside>
-    
-    <!-- 主内容区 -->
-    <main class="main-content">
-      <router-view v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </main>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">
+                  👋 退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </header>
+
+      <!-- 主内容 -->
+      <main class="main-content">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -104,6 +116,34 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const siteStore = useSiteStore()
+
+// 侧边栏折叠状态
+const isCollapsed = ref(false)
+
+// 从 localStorage 读取折叠状态
+const loadCollapsedState = () => {
+  const saved = localStorage.getItem('sidebar-collapsed')
+  if (saved !== null) {
+    isCollapsed.value = saved === 'true'
+  }
+  // 窄屏自动折叠
+  if (window.innerWidth < 768) {
+    isCollapsed.value = true
+  }
+}
+
+// 切换折叠状态
+const toggleCollapse = () => {
+  isCollapsed.value = !isCollapsed.value
+  localStorage.setItem('sidebar-collapsed', isCollapsed.value.toString())
+}
+
+// 响应窗口大小变化
+const handleResize = () => {
+  if (window.innerWidth < 768) {
+    isCollapsed.value = true
+  }
+}
 
 const activeMenu = computed(() => route.path)
 
@@ -131,6 +171,14 @@ function handleThemeChange(mode) {
 
 onMounted(() => {
   siteStore.fetchSettings()
+  loadCollapsedState()
+  window.addEventListener('resize', handleResize)
+})
+
+// 清理监听器
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -141,6 +189,7 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 侧边栏样式 */
 .sidebar {
   width: 220px;
   height: 100vh;
@@ -148,8 +197,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-color);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition: width 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
   flex-shrink: 0;
+}
+
+.sidebar.is-collapsed {
+  width: 64px;
 }
 
 .logo {
@@ -158,6 +211,12 @@ onMounted(() => {
   gap: 10px;
   padding: 20px 16px;
   border-bottom: 1px solid var(--border-color);
+  transition: padding 0.3s ease;
+}
+
+.sidebar.is-collapsed .logo {
+  justify-content: center;
+  padding: 20px 0;
 }
 
 .logo-emoji {
@@ -168,6 +227,8 @@ onMounted(() => {
   font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar-menu {
@@ -182,85 +243,179 @@ onMounted(() => {
   margin-bottom: 2px;
   padding: 0 14px !important;
   font-size: 14px;
+  display: flex;
+  align-items: center;
 }
 
 .menu-emoji {
-  font-size: 16px;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
   margin-right: 10px;
 }
 
-.sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid var(--border-color);
+.menu-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 折叠状态下的菜单项样式 */
+.sidebar.is-collapsed .sidebar-menu .el-menu-item {
+  padding: 0 !important;
+  justify-content: center;
+}
+
+.sidebar.is-collapsed .menu-emoji {
+  margin-right: 0;
+  font-size: 20px;
+}
+
+.sidebar.is-collapsed .menu-text {
+  display: none;
+}
+
+/* 折叠按钮容器 */
+.collapse-btn-wrapper {
+  padding: 16px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.collapse-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse-btn:hover {
+  background: rgba(100, 116, 139, 0.08);
+  transform: translateX(2px);
+}
+
+.collapse-btn:active {
+  transform: translateX(0);
+}
+
+.collapse-icon {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.collapse-btn:hover .collapse-icon {
+  color: #3b82f6;
+}
+
+/* 内容包装器 */
+.content-wrapper {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-primary);
 }
 
-.theme-switcher {
-  width: 100%;
+/* 顶部栏 */
+.top-bar {
+  height: 60px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  flex-shrink: 0;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-.theme-btn {
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 顶部栏按钮样式 */
+.header-btn {
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--border-radius-sm);
+  padding: 0 12px;
+  border-radius: 8px;
   cursor: pointer;
-  color: var(--text-secondary);
-  transition: var(--transition);
-  width: 100%;
-  font-size: 14px;
+  background: rgba(100, 116, 139, 0.06);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.theme-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+.header-btn:hover {
+  background: rgba(100, 116, 139, 0.12);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-.theme-emoji {
-  font-size: 16px;
+.header-btn:active {
+  transform: translateY(0);
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  padding: 10px 12px;
-  border-radius: var(--border-radius-sm);
-  transition: var(--transition);
+.btn-icon {
+  font-size: 18px;
+  transition: all 0.2s ease;
 }
 
-.user-info:hover {
-  background: var(--bg-hover);
+.header-btn:hover .btn-icon {
+  filter: brightness(1.1);
+}
+
+/* 用户按钮样式 */
+.user-btn {
+  padding: 4px 12px 4px 4px;
 }
 
 .user-avatar {
   width: 32px;
   height: 32px;
-  background: var(--accent-gradient);
-  border-radius: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-weight: 600;
   font-size: 14px;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25);
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+
+.header-btn:hover .user-avatar {
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.35);
+  transform: scale(1.05);
 }
 
 .username {
-  color: var(--text-primary);
-  font-weight: 500;
   font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 
+/* 主内容区 */
 .main-content {
   flex: 1;
   padding: 24px 32px;
   overflow-y: auto;
-  height: 100vh;
   background: var(--bg-primary);
   transition: background-color 0.3s ease;
 }
@@ -269,5 +424,37 @@ onMounted(() => {
 :deep(.el-dropdown-menu__item.active) {
   color: var(--accent-primary);
   font-weight: 500;
+}
+
+/* 响应式：窄屏适配 */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 64px;
+  }
+
+  .logo-text {
+    display: none !important;
+  }
+
+  .logo {
+    justify-content: center;
+    padding: 20px 0;
+  }
+
+  .top-bar {
+    padding: 0 16px;
+  }
+
+  .username {
+    display: none;
+  }
+
+  .user-btn {
+    padding: 4px;
+  }
+
+  .main-content {
+    padding: 16px;
+  }
 }
 </style>

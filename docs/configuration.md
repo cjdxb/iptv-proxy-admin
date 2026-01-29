@@ -13,6 +13,52 @@
 
 ---
 
+## ⚙️ Web 界面配置
+
+从 v1.2.0 开始，部分配置项支持在 Web 界面进行配置，无需编辑 `.env` 文件和重启服务。
+
+### 可在 Web 界面配置的项目
+
+| 配置项 | 位置 | 生效方式 |
+|--------|------|----------|
+| **UDPxy 配置** | 系统设置 > UDPxy 配置 | 立即生效 |
+| - UDPxy 启用开关 | | |
+| - UDPxy 服务地址 | | |
+| **健康检测配置** | 系统设置 > 健康检测配置 | 立即生效 |
+| - 检测超时时间 | | |
+| - 失败重试次数 | | |
+| - 检测线程数 | | |
+| **代理配置** | 系统设置 > 代理配置 | 立即生效 |
+| - 缓冲区大小 | | |
+
+### 配置优先级
+
+```
+数据库配置（Web 界面）> 环境变量配置（.env 文件）> 代码默认值
+```
+
+**说明：**
+- 如果在 Web 界面配置了某项，则优先使用 Web 界面的配置
+- 如果 Web 界面未配置，则使用 `.env` 文件中的默认值
+- 如果 `.env` 文件中也未配置，则使用代码中的默认值
+- Web 界面配置保存在数据库中，重启服务后仍然有效
+
+### 详细配置分类
+
+**支持 Web 界面配置的项（数据库 > 环境变量）：**
+- ✅ **UDPxy 相关**: `UDPXY_ENABLED`, `UDPXY_URL`
+- ✅ **健康检测**: `HEALTH_CHECK_TIMEOUT`, `HEALTH_CHECK_MAX_RETRIES`, `HEALTH_CHECK_THREADS`
+- ✅ **代理配置**: `PROXY_BUFFER_SIZE`
+
+**仅支持环境变量配置的项（需重启服务生效）：**
+- 🔧 **服务器**: `SERVER_HOST`, `SERVER_PORT`, `SERVER_DEBUG`
+- 🔧 **数据库**: `DATABASE_TYPE`, `DATABASE_PATH`, `MYSQL_*` 系列
+- 🔧 **会话**: `SESSION_SECRET_KEY`
+- 🔧 **健康检测调度**: `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_INTERVAL`
+- 🔧 **观看历史**: `WATCH_HISTORY_SAVE_INTERVAL`
+
+---
+
 ## 环境变量配置
 
 ### 服务器配置
@@ -102,18 +148,22 @@
 
 ### UDPxy 配置
 
-#### UDPXY_ENABLED
+#### UDPXY_ENABLED ⚙️ 可在 Web 界面配置
 - **说明**: 是否启用 UDPxy 代理（用于组播转 HTTP）
 - **类型**: Boolean
 - **默认值**: `false`
 - **示例**: `true` / `false`
+- **配置位置**: 系统设置 > UDPxy 配置
+- **生效方式**: 立即生效，无需重启
 
-#### UDPXY_URL
+#### UDPXY_URL ⚙️ 可在 Web 界面配置
 - **说明**: UDPxy 代理服务器地址
 - **类型**: String (URL)
 - **默认值**: `http://localhost:3680`
 - **示例**: `http://192.168.1.1:4022`
 - **注意**: 仅当 UDPXY_ENABLED=true 时生效
+- **配置位置**: 系统设置 > UDPxy 配置
+- **生效方式**: 立即生效，无需重启
 
 ---
 
@@ -132,30 +182,47 @@
 - **示例**: `3600` (1小时) / `600` (10分钟)
 - **建议值**: 600-3600 秒之间
 
-#### HEALTH_CHECK_TIMEOUT
+#### HEALTH_CHECK_TIMEOUT ⚙️ 可在 Web 界面配置
 - **说明**: 单个频道健康检测超时时间（秒）
 - **类型**: Integer
 - **默认值**: `10`
 - **示例**: `5` / `15`
 - **建议值**: 5-30 秒之间
+- **配置位置**: 系统设置 > 健康检测配置
+- **生效方式**: 立即生效，无需重启
 
-#### HEALTH_CHECK_MAX_RETRIES
+#### HEALTH_CHECK_MAX_RETRIES ⚙️ 可在 Web 界面配置
 - **说明**: 健康检测失败后的重试次数
 - **类型**: Integer
 - **默认值**: `1`
 - **示例**: `2` / `3`
 - **说明**: 设置为 1 表示失败后重试 1 次（共检测 2 次）
+- **配置位置**: 系统设置 > 健康检测配置
+- **生效方式**: 立即生效，无需重启
+
+#### HEALTH_CHECK_THREADS ⚙️ 可在 Web 界面配置
+- **说明**: 健康检测并发线程数
+- **类型**: Integer
+- **默认值**: `3`
+- **示例**: `5` / `1`
+- **范围**: 1-5
+- **说明**: 线程数越多，检测速度越快，但会增加系统负载
+- **建议值**: 3-5 线程
+- **配置位置**: 系统设置 > 健康检测配置
+- **生效方式**: 立即生效，无需重启
 
 ---
 
 ### 代理配置
 
-#### PROXY_BUFFER_SIZE
+#### PROXY_BUFFER_SIZE ⚙️ 可在 Web 界面配置
 - **说明**: 代理流传输缓冲区大小（字节）
 - **类型**: Integer
 - **默认值**: `8192` (8KB)
 - **示例**: `16384` (16KB) / `4096` (4KB)
 - **建议值**: 4096-16384 之间
+- **配置位置**: 系统设置 > 代理配置
+- **生效方式**: 立即生效，无需重启
 
 ---
 
@@ -189,21 +256,18 @@ DATABASE_PATH=data/iptv.db
 # Session Config
 SESSION_SECRET_KEY=dev-secret-key
 
-# UDPxy Config
-UDPXY_ENABLED=false
-UDPXY_URL=http://localhost:4022
-
 # Health Check Config
 HEALTH_CHECK_ENABLED=true
 HEALTH_CHECK_INTERVAL=1800
-HEALTH_CHECK_TIMEOUT=10
-HEALTH_CHECK_MAX_RETRIES=1
-
-# Proxy Config
-PROXY_BUFFER_SIZE=8192
 
 # Watch History Config
 WATCH_HISTORY_SAVE_INTERVAL=60
+
+# 注意：以下配置项可在系统设置 Web 界面中配置，此处无需设置
+# - UDPXY_ENABLED / UDPXY_URL (UDPxy 配置)
+# - HEALTH_CHECK_TIMEOUT (健康检测超时)
+# - HEALTH_CHECK_MAX_RETRIES (健康检测重试次数)
+# - PROXY_BUFFER_SIZE (代理缓冲区大小)
 ```
 
 ### 生产环境配置
@@ -225,21 +289,18 @@ MYSQL_DB=iptv_production
 # Session Config
 SESSION_SECRET_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
 
-# UDPxy Config
-UDPXY_ENABLED=true
-UDPXY_URL=http://192.168.1.1:4022
-
 # Health Check Config
 HEALTH_CHECK_ENABLED=true
 HEALTH_CHECK_INTERVAL=3600
-HEALTH_CHECK_TIMEOUT=15
-HEALTH_CHECK_MAX_RETRIES=2
-
-# Proxy Config
-PROXY_BUFFER_SIZE=16384
 
 # Watch History Config
 WATCH_HISTORY_SAVE_INTERVAL=120
+
+# 注意：以下配置项建议在系统设置 Web 界面中配置
+# - UDPXY_ENABLED / UDPXY_URL (UDPxy 配置)
+# - HEALTH_CHECK_TIMEOUT (健康检测超时)
+# - HEALTH_CHECK_MAX_RETRIES (健康检测重试次数)
+# - PROXY_BUFFER_SIZE (代理缓冲区大小)
 ```
 
 ---

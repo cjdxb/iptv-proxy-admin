@@ -240,7 +240,7 @@ onMounted(fetchUrls)
 
 <style scoped>
 .subscription-page {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -278,6 +278,7 @@ onMounted(fetchUrls)
 
 .link-section {
   display: flex;
+  align-items: center;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -288,9 +289,24 @@ onMounted(fetchUrls)
   padding: 12px;
   border-radius: 6px;
   font-family: monospace;
-  word-break: break-all;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  cursor: text;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* 隐藏 WebKit 浏览器的滚动条 */
+.link-box::-webkit-scrollbar {
+  display: none;
+}
+
+.link-box code {
+  white-space: nowrap;
 }
 
 .subscribe-buttons {

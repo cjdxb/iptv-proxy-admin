@@ -63,10 +63,12 @@
 - **描述**: 获取频道列表，支持分页和筛选
 - **参数**:
   - Query: `group_id` (可选): 按分组筛选
-  - Query: `is_active` (可选): 按活跃状态筛选
-  - Query: `search` (可选): 搜索关键词
+  - Query: `is_active` (可选): 按活跃状态筛选 (true/false)
+  - Query: `protocol` (可选): 按协议筛选，可选值：`http`, `https`, `rtp`, `udp`
+  - Query: `is_healthy` (可选): 按健康状态筛选 (true/false)
+  - Query: `search` (可选): 搜索关键词（支持频道名称、URL 搜索）
   - Query: `page` (可选): 页码，默认为1
-  - Query: `per_page` (可选): 每页数量，默认为20
+  - Query: `per_page` (可选): 每页数量，默认为50
 - **响应**: `{success: Boolean, data: {items: Array, pagination: Object}}`
 
 ### 创建频道
@@ -194,6 +196,36 @@
   - Request Body (JSON): `{value: newValue}`
 - **响应**: `{success: Boolean, message: String}`
 
+### 重新加载运行时配置
+- **接口**: `POST /api/settings/reload`
+- **描述**: 从数据库重新加载运行时配置
+- **参数**: 无
+- **响应**: `{message: String}`
+- **说明**: 在 Web 界面修改配置后立即生效，无需重启服务。主要用于重载可热更新的配置项（如健康检测、UDPxy、代理缓冲区等）
+
+### 测试 UDPxy 连接
+- **接口**: `POST /api/settings/test-udpxy`
+- **描述**: 测试 UDPxy 服务器的连接性
+- **参数**:
+  - Request Body (JSON): `{url: String}`
+  - 示例: `{"url": "http://192.168.1.1:3680"}`
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "UDPxy 服务器连接成功",
+    "status_code": 200
+  }
+  ```
+  或
+  ```json
+  {
+    "success": false,
+    "message": "连接超时，请检查服务器地址或网络连接"
+  }
+  ```
+- **说明**: 用于验证 UDPxy 服务器配置是否正确。会尝试访问 `/status` 端点来测试连接
+
 ---
 
 ## 仪表盘接口 - `/dashboard`
@@ -213,11 +245,34 @@
 
 ### 获取频道排行
 - **接口**: `GET /api/dashboard/channel-ranking`
-- **描述**: 获取最受欢迎频道排行
+- **描述**: 获取最受欢迎频道排行（按观看时长排序）
 - **参数**:
-  - Query: `days` (可选): 统计天数
-  - Query: `limit` (可选): 返回结果数量限制
-- **响应**: `{success: Boolean, data: ChannelRankingArray}`
+  - Query: `days` (可选): 统计天数，范围 1-30，默认为 7
+  - Query: `limit` (可选): 返回频道数量限制，范围 1-50，默认为 10
+- **响应**:
+  ```json
+  {
+    "ranking": [
+      {
+        "channel_id": 1,
+        "channel_name": "CCTV-1",
+        "total_duration": 86400,
+        "watch_count": 25
+      },
+      {
+        "channel_id": 2,
+        "channel_name": "湖南卫视",
+        "total_duration": 72000,
+        "watch_count": 18
+      }
+    ],
+    "days": 7
+  }
+  ```
+- **说明**:
+  - `total_duration`: 总观看时长（秒）
+  - `watch_count`: 观看次数（独立观看记录数）
+  - 排序规则：按 `total_duration` 降序排列
 
 ---
 

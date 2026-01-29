@@ -85,19 +85,19 @@
         :data="historyList"
         empty-text="暂无历史连接记录"
       >
-        <el-table-column prop="username" label="用户" width="120" />
-        <el-table-column prop="channel_name" label="频道" min-width="200" />
-        <el-table-column label="开始时间" width="180">
+        <el-table-column prop="username" label="用户" width="100" />
+        <el-table-column prop="channel_name" label="频道" min-width="150" show-overflow-tooltip />
+        <el-table-column label="开始时间" min-width="110">
           <template #default="{ row }">
             {{ formatDateTime(row.start_time) }}
           </template>
         </el-table-column>
-        <el-table-column label="结束时间" width="180">
+        <el-table-column label="结束时间" min-width="110">
           <template #default="{ row }">
             {{ formatDateTime(row.end_time) }}
           </template>
         </el-table-column>
-        <el-table-column label="观看时长" width="120">
+        <el-table-column label="观看时长" width="130">
           <template #default="{ row }">
             {{ formatDuration(row.duration) }}
           </template>

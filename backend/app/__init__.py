@@ -91,6 +91,10 @@ def create_app():
             admin.generate_token()
             db.session.add(admin)
             db.session.commit()
+
+        # 加载数据库中的运行时配置
+        from .config import load_runtime_config_from_db
+        load_runtime_config_from_db()
     
     # 启动健康检测定时任务
     if config.get('health_check', {}).get('enabled', True):

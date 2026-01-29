@@ -43,7 +43,28 @@ sudo apt install -y \
     build-essential
 ```
 
-### 3. 安装 Node.js
+### 3. 安装 UDPxy（可选）
+
+**说明：** 仅当需要组播转 HTTP 功能时安装。
+
+```bash
+# 安装 UDPxy
+sudo apt install -y udpxy
+
+# 启动 UDPxy 服务（使用默认端口 3680）
+sudo systemctl start udpxy
+sudo systemctl enable udpxy
+
+# 验证 UDPxy 服务状态
+curl http://localhost:3680/status
+```
+
+**配置说明：**
+- UDPxy 默认监听端口：3680
+- 可通过修改 `/etc/default/udpxy` 来调整参数
+- 在系统设置中配置 UDPxy 服务地址（例如：`http://192.168.1.1:3680`）
+
+### 4. 安装 Node.js
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
@@ -106,17 +127,23 @@ SESSION_SECRET_KEY=$(openssl rand -base64 32)
 
 # UDPxy 配置（如果需要组播转换）
 UDPXY_ENABLED=false
-UDPXY_URL=http://localhost:4022
+UDPXY_URL=http://localhost:3680
 
 # 健康检测配置
 HEALTH_CHECK_ENABLED=true
 HEALTH_CHECK_INTERVAL=1800
+HEALTH_CHECK_THREADS=3
 
-# 代理BUFFER配置
+# 代理配置
 PROXY_BUFFER_SIZE=8192
 
 # 观看历史配置
 WATCH_HISTORY_SAVE_INTERVAL=60
+
+# 注意：以下配置项可在 Web 界面中配置，此处的值会被数据库配置覆盖：
+# - HEALTH_CHECK_THREADS, HEALTH_CHECK_TIMEOUT, HEALTH_CHECK_MAX_RETRIES
+# - UDPXY_ENABLED, UDPXY_URL
+# - PROXY_BUFFER_SIZE
 ```
 
 **重要：** 必须修改 `SESSION_SECRET_KEY`，使用 `openssl rand -base64 32` 生成强密钥。
@@ -292,7 +319,6 @@ Group=www-data
 WorkingDirectory=/var/www/iptv-proxy-admin/backend
 
 Environment="PATH=/var/www/iptv-proxy-admin/backend/venv/bin"
-Environment="LANG=en_US.UTF-8"
 
 ExecStart=/var/www/iptv-proxy-admin/backend/venv/bin/gunicorn \
     -c gunicorn.conf.py \
@@ -489,6 +515,14 @@ sudo systemctl restart nginx               # 重启
 - [ ] Nginx 配置无错误
 - [ ] 前端静态文件部署成功
 - [ ] API 接口可访问
+
+### 功能配置
+- [ ] 配置健康检测线程数（推荐 3-5）
+- [ ] 配置观看历史保存间隔（推荐 60-120 秒）
+- [ ] 测试 UDPxy 连接（如果启用了组播功能）
+- [ ] 验证观看历史记录正常保存
+- [ ] 确认多线程健康检测正常运行
+- [ ] 测试频道筛选功能（按分组、协议、状态）
 
 ### 数据库
 - [ ] 数据库初始化成功

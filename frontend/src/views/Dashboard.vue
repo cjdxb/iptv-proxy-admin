@@ -80,7 +80,13 @@
       <div class="section-card">
         <div class="section-header">
           <h3>🏆 热门频道</h3>
-          <el-tag type="success" size="small">近7天</el-tag>
+          <div class="chart-controls">
+            <el-radio-group v-model="rankingDays" size="small" @change="fetchChannelRanking">
+              <el-radio-button :value="7">7天</el-radio-button>
+              <el-radio-button :value="14">14天</el-radio-button>
+              <el-radio-button :value="30">30天</el-radio-button>
+            </el-radio-group>
+          </div>
         </div>
         <div v-if="channelRanking.length" class="ranking-list">
           <div 
@@ -161,9 +167,9 @@
           <span class="action-emoji">🔗</span>
           <span>获取订阅</span>
         </router-link>
-        <div class="action-item" @click="runHealthCheck">
-          <span class="action-emoji">🔄</span>
-          <span>健康检测</span>
+        <div class="action-item" :class="{ 'is-loading': healthCheckLoading }" @click="runHealthCheck">
+          <span class="action-emoji" :class="{ 'rotating': healthCheckLoading }">🔄</span>
+          <span>{{ healthCheckLoading ? '检测中...' : '健康检测' }}</span>
         </div>
         <router-link to="/settings" class="action-item">
           <span class="action-emoji">⚙️</span>
@@ -190,7 +196,9 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent
 const stats = ref({})
 const loading = ref(false)
 const chartLoading = ref(false)
+const healthCheckLoading = ref(false)
 const chartDays = ref(7)
+const rankingDays = ref(7)
 const watchStats = ref({ stats: [], total_duration: 0 })
 const channelRanking = ref([])
 
@@ -307,7 +315,7 @@ async function fetchWatchStats() {
 
 async function fetchChannelRanking() {
   try {
-    const response = await api.dashboard.getChannelRanking(7, 10)
+    const response = await api.dashboard.getChannelRanking(rankingDays.value, 10)
     channelRanking.value = response.data.ranking || []
   } catch (error) {
     console.error('获取频道排名失败', error)
@@ -315,13 +323,22 @@ async function fetchChannelRanking() {
 }
 
 async function runHealthCheck() {
+  if (healthCheckLoading.value) {
+    ElMessage.warning('健康检测正在进行中，请稍候...')
+    return
+  }
+
+  healthCheckLoading.value = true
   try {
     ElMessage.info('正在进行健康检测...')
-    await api.health.checkAll()
-    ElMessage.success('健康检测完成 ✅')
+    const result = await api.health.checkAll()
+    const data = result.data
+    ElMessage.success(`检测完成：正常 ${data.healthy} 个，异常 ${data.unhealthy} 个`)
     fetchDashboard()
   } catch (error) {
     ElMessage.error('健康检测失败')
+  } finally {
+    healthCheckLoading.value = false
   }
 }
 
@@ -642,6 +659,30 @@ onMounted(() => {
 
 .action-emoji {
   font-size: 18px;
+}
+
+.action-item.is-loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.action-item.is-loading:hover {
+  transform: none;
+}
+
+.rotating {
+  display: inline-block;
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 频道排名 */
