@@ -42,7 +42,8 @@ def load_config():
             'enabled': os.getenv('HEALTH_CHECK_ENABLED', 'true').lower() == 'true',
             'interval': int(os.getenv('HEALTH_CHECK_INTERVAL', 1800)),
             'timeout': int(os.getenv('HEALTH_CHECK_TIMEOUT', 10)),
-            'max_retries': int(os.getenv('HEALTH_CHECK_MAX_RETRIES', 1))
+            'max_retries': int(os.getenv('HEALTH_CHECK_MAX_RETRIES', 1)),
+            'threads': int(os.getenv('HEALTH_CHECK_THREADS', 3))
         },
         'proxy': {
             'buffer_size': int(os.getenv('PROXY_BUFFER_SIZE', 8192))
@@ -131,6 +132,13 @@ def get_health_check_max_retries():
     if runtime_value is not None:
         return runtime_value
     return config.get('health_check', {}).get('max_retries', 1)
+
+def get_health_check_threads():
+    """获取健康检测线程数（优先从运行时配置读取）"""
+    runtime_value = get_runtime_config('health_check_threads')
+    if runtime_value is not None:
+        return runtime_value
+    return config.get('health_check', {}).get('threads', 3)
 
 def get_udpxy_enabled():
     """获取 UDPxy 启用状态（优先从运行时配置读取）"""
