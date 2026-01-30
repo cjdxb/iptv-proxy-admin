@@ -57,8 +57,9 @@ def stream_channel(channel_id):
     user = User.query.filter_by(token=token).first()
     if not user:
         return jsonify({'error': 'Token 无效'}), 401
-    
-    channel = Channel.query.get(channel_id)
+
+    # 使用 SQLAlchemy 2.0 兼容的方式
+    channel = db.session.get(Channel, channel_id)
     if not channel:
         return jsonify({'error': '频道不存在'}), 404
     
@@ -115,7 +116,8 @@ def stream_channel(channel_id):
             conn_info = active_connections.pop(connection_id, None)
             if conn_info and conn_info.get('watch_record_id'):
                 try:
-                    record = WatchHistory.query.get(conn_info['watch_record_id'])
+                    # 使用 SQLAlchemy 2.0 兼容的方式
+                    record = db.session.get(WatchHistory, conn_info['watch_record_id'])
                     if record:
                         record.finish()
                         db.session.commit()

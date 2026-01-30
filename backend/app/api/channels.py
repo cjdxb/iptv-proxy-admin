@@ -181,7 +181,8 @@ def update_sort_order():
         return jsonify({'error': '请提供排序信息'}), 400
     
     for item in orders:
-        channel = Channel.query.get(item['id'])
+        # 使用 SQLAlchemy 2.0 兼容的方式
+        channel = db.session.get(Channel, item['id'])
         if channel:
             channel.sort_order = item['sort_order']
     

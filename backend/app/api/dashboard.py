@@ -4,6 +4,8 @@
 """
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func, select
+from app import db
 from app.models.channel import Channel, ChannelGroup
 from app.models.watch_history import WatchHistory
 from app.api.proxy import active_connections
@@ -17,14 +19,24 @@ bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
 @login_required
 def get_dashboard():
     """获取仪表盘数据"""
-    # 频道统计
-    total_channels = Channel.query.count()
-    active_channels = Channel.query.filter_by(is_active=True).count()
-    healthy_channels = Channel.query.filter_by(is_active=True, is_healthy=True).count()
-    unhealthy_channels = Channel.query.filter_by(is_active=True, is_healthy=False).count()
-    
+    # 频道统计（使用 SQLAlchemy 2.0 兼容的方式）
+    total_channels = db.session.scalar(select(func.count()).select_from(Channel))
+    active_channels = db.session.scalar(
+        select(func.count()).select_from(Channel).where(Channel.is_active == True)
+    )
+    healthy_channels = db.session.scalar(
+        select(func.count()).select_from(Channel).where(
+            Channel.is_active == True, Channel.is_healthy == True
+        )
+    )
+    unhealthy_channels = db.session.scalar(
+        select(func.count()).select_from(Channel).where(
+            Channel.is_active == True, Channel.is_healthy == False
+        )
+    )
+
     # 分组统计
-    total_groups = ChannelGroup.query.count()
+    total_groups = db.session.scalar(select(func.count()).select_from(ChannelGroup))
     
     # 协议统计
     protocol_stats = {}

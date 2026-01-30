@@ -76,7 +76,8 @@ def create_app():
     @login_manager.user_loader
     def load_user(user_id):
         from .models.user import User
-        return User.query.get(int(user_id))
+        # 使用 SQLAlchemy 2.0 兼容的方式
+        return db.session.get(User, int(user_id))
     
     # 注册蓝图
     from .api import auth, channels, groups, settings, subscription, proxy, health, dashboard, history

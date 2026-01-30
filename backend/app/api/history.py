@@ -21,8 +21,8 @@ def cleanup_history():
     清空所有观看历史
     """
     try:
-        # 查询要删除的记录数量
-        count_before = WatchHistory.query.count()
+        # 查询要删除的记录数量（使用 SQLAlchemy 2.0 兼容的方式）
+        count_before = db.session.scalar(select(func.count()).select_from(WatchHistory))
 
         # 删除所有记录
         deleted_count = WatchHistory.query.delete()
@@ -104,8 +104,8 @@ def get_history_stats():
     获取观看历史统计信息
     """
     try:
-        # 总记录数
-        total_count = WatchHistory.query.count()
+        # 总记录数（使用 SQLAlchemy 2.0 兼容的方式）
+        total_count = db.session.scalar(select(func.count()).select_from(WatchHistory))
 
         # 最早记录时间（使用 start_time）
         earliest_record = db.session.query(

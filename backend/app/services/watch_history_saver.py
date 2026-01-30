@@ -34,7 +34,8 @@ def save_active_watch_records():
             continue
 
         try:
-            record = WatchHistory.query.get(watch_record_id)
+            # 使用 SQLAlchemy 2.0 兼容的方式
+            record = db.session.get(WatchHistory, watch_record_id)
             if record:
                 # 更新结束时间和时长（增量保存）
                 record.end_time = now
