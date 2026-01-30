@@ -4,6 +4,7 @@
 """
 
 import requests
+import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from loguru import logger
@@ -82,9 +83,9 @@ def stream_channel(channel_id):
     db.session.add(watch_record)
     db.session.commit()
     watch_record_id = watch_record.id
-    
-    # 记录活跃连接
-    connection_id = f"{user.id}_{channel_id}_{id(request)}"
+
+    # 记录活跃连接（使用UUID确保唯一性）
+    connection_id = f"{user.id}_{channel_id}_{uuid.uuid4().hex}"
     active_connections[connection_id] = {
         'user_id': user.id,
         'username': user.username,
