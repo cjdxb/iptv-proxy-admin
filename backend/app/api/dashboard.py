@@ -8,6 +8,7 @@ from app.models.channel import Channel, ChannelGroup
 from app.models.watch_history import WatchHistory
 from app.api.proxy import active_connections
 from app.utils.auth import login_required
+from app import __version__
 
 bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
 
@@ -96,10 +97,18 @@ def get_channel_ranking():
         limit = 50
     
     ranking = WatchHistory.get_channel_ranking(days=days, limit=limit)
-    
+
     return jsonify({
         'ranking': ranking,
         'days': days
     })
 
+
+@bp.route('/version', methods=['GET'])
+def get_version():
+    """获取系统版本信息"""
+    return jsonify({
+        'version': __version__,
+        'name': 'IPTV Proxy Admin'
+    })
 

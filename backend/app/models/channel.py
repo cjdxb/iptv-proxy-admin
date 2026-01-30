@@ -6,6 +6,7 @@
 import re
 from datetime import datetime
 from app import db
+from app.utils.datetime_utils import to_iso8601_utc
 
 
 class ChannelGroup(db.Model):
@@ -27,7 +28,7 @@ class ChannelGroup(db.Model):
             'name': self.name,
             'sort_order': self.sort_order,
             'channel_count': self.channels.count(),
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': to_iso8601_utc(self.created_at)  # UTC 时间 + Z 后缀
         }
         if include_channels:
             data['channels'] = [ch.to_dict() for ch in self.channels.order_by(Channel.sort_order).all()]
@@ -134,8 +135,8 @@ class Channel(db.Model):
             'sort_order': self.sort_order,
             'is_active': self.is_active,
             'protocol': self.protocol,
-            'last_check': self.last_check.isoformat() if self.last_check else None,
+            'last_check': to_iso8601_utc(self.last_check),    # UTC 时间 + Z 后缀
             'is_healthy': self.is_healthy,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'created_at': to_iso8601_utc(self.created_at),    # UTC 时间 + Z 后缀
+            'updated_at': to_iso8601_utc(self.updated_at)     # UTC 时间 + Z 后缀
         }

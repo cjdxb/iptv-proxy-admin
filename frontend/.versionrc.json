@@ -1,0 +1,18 @@
+{
+  "types": [
+    { "type": "feat", "section": "✨ 新增功能" },
+    { "type": "fix", "section": "🐛 Bug 修复" },
+    { "type": "chore", "section": "🔧 构建/工程依赖/工具", "hidden": false },
+    { "type": "docs", "section": "📝 文档", "hidden": false },
+    { "type": "style", "section": "💄 代码样式", "hidden": true },
+    { "type": "refactor", "section": "♻️ 代码重构", "hidden": false },
+    { "type": "perf", "section": "⚡ 性能优化", "hidden": false },
+    { "type": "test", "section": "✅ 测试", "hidden": true }
+  ],
+  "commitUrlFormat": "{{host}}/{{owner}}/{{repository}}/commit/{{hash}}",
+  "compareUrlFormat": "{{host}}/{{owner}}/{{repository}}/compare/{{previousTag}}...{{currentTag}}",
+  "issueUrlFormat": "{{host}}/{{owner}}/{{repository}}/issues/{{id}}",
+  "userUrlFormat": "{{host}}/{{user}}",
+  "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
+  "issuePrefixes": ["#"]
+}

@@ -315,6 +315,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import api from '@/api'
+import { formatDate } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const siteStore = useSiteStore()
@@ -637,18 +638,7 @@ async function cleanupAllHistory() {
   }
 }
 
-// 格式化日期时间（精确到秒）
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-}
+// 注意：formatDate 函数已从 @/utils/datetime 导入
 
 onMounted(fetchSettings)
 </script>

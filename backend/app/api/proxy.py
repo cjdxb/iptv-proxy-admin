@@ -14,6 +14,7 @@ from app.models.channel import Channel
 from app.models.watch_history import WatchHistory
 from app.config import config
 from app.utils.auth import login_required
+from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 
 bp = Blueprint('proxy', __name__, url_prefix='/api/proxy')
 
@@ -86,12 +87,13 @@ def stream_channel(channel_id):
 
     # 记录活跃连接（使用UUID确保唯一性）
     connection_id = f"{user.id}_{channel_id}_{uuid.uuid4().hex}"
+    start_time_utc = to_utc_naive()  # 获取 UTC 时间
     active_connections[connection_id] = {
         'user_id': user.id,
         'username': user.username,
         'channel_id': channel.id,
         'channel_name': channel.name,
-        'start_time': datetime.now().isoformat(),
+        'start_time': to_iso8601_utc(start_time_utc),  # 使用 UTC 时间 + Z 后缀
         'watch_record_id': watch_record_id
     }
     

@@ -219,3 +219,4 @@ dmypy.json
 *.pid
 *.seed
 *.pid.lock
+/.claude/

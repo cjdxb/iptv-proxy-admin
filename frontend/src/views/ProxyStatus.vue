@@ -123,6 +123,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '@/api'
+import { formatTime, formatDateTime, getDuration, formatDuration } from '@/utils/datetime'
 
 const loading = ref(false)
 const loadingHistory = ref(false)
@@ -152,23 +153,6 @@ async function fetchStatus() {
   }
 }
 
-function formatTime(isoString) {
-  if (!isoString) return '-'
-  const date = new Date(isoString)
-  return date.toLocaleString('zh-CN')
-}
-
-function getDuration(startTime) {
-  if (!startTime) return '-'
-  const start = new Date(startTime)
-  const now = new Date()
-  const diff = Math.floor((now - start) / 1000)
-
-  if (diff < 60) return '小于1分钟'
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟`
-  return `${Math.floor(diff / 3600)} 小时 ${Math.floor((diff % 3600) / 60)} 分钟`
-}
-
 // 获取历史连接列表
 async function fetchHistoryList() {
   loadingHistory.value = true
@@ -183,26 +167,7 @@ async function fetchHistoryList() {
   }
 }
 
-// 格式化日期时间（精确到秒）
-function formatDateTime(dateStr) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-}
-
-// 格式化观看时长（秒数转换为易读格式）
-function formatDuration(seconds) {
-  if (!seconds) return '-'
-  if (seconds < 60) return '小于1分钟'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`
-  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分钟`
-}
+// 注意：formatTime、formatDateTime、getDuration、formatDuration 函数已从 @/utils/datetime 导入
 
 onMounted(() => {
   fetchStatus()

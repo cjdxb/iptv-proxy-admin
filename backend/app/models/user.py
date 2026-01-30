@@ -8,6 +8,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 from app import db
+from app.utils.datetime_utils import to_iso8601_utc
 
 
 class User(UserMixin, db.Model):
@@ -39,5 +40,5 @@ class User(UserMixin, db.Model):
             'id': self.id,
             'username': self.username,
             'token': self.token,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': to_iso8601_utc(self.created_at)  # UTC 时间 + Z 后缀
         }

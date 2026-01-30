@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 from app import db
 from app.models.watch_history import WatchHistory
+from app.utils.datetime_utils import to_utc_naive, to_iso8601_utc
 
 
 def save_active_watch_records():
@@ -25,7 +26,7 @@ def save_active_watch_records():
 
     saved_count = 0
     cleaned_count = 0
-    now = datetime.now()
+    now = to_utc_naive()  # 使用 UTC 时间
 
     for connection_id, conn_info in list(active_connections.items()):
         watch_record_id = conn_info.get('watch_record_id')
@@ -47,7 +48,7 @@ def save_active_watch_records():
                     record.duration = calculated_duration
 
                 # 更新连接的最后更新时间
-                conn_info['last_update'] = now.isoformat()
+                conn_info['last_update'] = to_iso8601_utc(now)  # UTC 时间 + Z 后缀
                 saved_count += 1
 
                 # 清理超过 2 小时没更新的僵尸连接（可能是异常断开）

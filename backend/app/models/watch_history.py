@@ -5,6 +5,7 @@
 
 from datetime import datetime, date
 from app import db
+from app.utils.datetime_utils import to_utc_naive, to_iso8601_utc, to_iso8601_date
 
 
 class WatchHistory(db.Model):
@@ -26,14 +27,14 @@ class WatchHistory(db.Model):
     def __init__(self, user_id, channel_id, start_time=None):
         self.user_id = user_id
         self.channel_id = channel_id
-        self.start_time = start_time or datetime.now()
+        self.start_time = start_time or to_utc_naive()  # 使用 UTC 时间
         self.watch_date = self.start_time.date()
     
     def finish(self):
         """结束观看，计算时长"""
         from loguru import logger
 
-        self.end_time = datetime.now()
+        self.end_time = to_utc_naive()  # 使用 UTC 时间
         calculated_duration = int((self.end_time - self.start_time).total_seconds())
 
         # 防止负数时长（可能由于系统时间回退或时区问题导致）
@@ -49,10 +50,10 @@ class WatchHistory(db.Model):
             'user_id': self.user_id,
             'channel_id': self.channel_id,
             'channel_name': self.channel.name if self.channel else None,
-            'start_time': self.start_time.isoformat() + 'Z' if self.start_time else None,
-            'end_time': self.end_time.isoformat() + 'Z' if self.end_time else None,
+            'start_time': to_iso8601_utc(self.start_time),  # UTC 时间 + Z 后缀
+            'end_time': to_iso8601_utc(self.end_time),      # UTC 时间 + Z 后缀
             'duration': self.duration,
-            'watch_date': self.watch_date.isoformat() if self.watch_date else None
+            'watch_date': to_iso8601_date(self.watch_date)
         }
     
     @staticmethod
