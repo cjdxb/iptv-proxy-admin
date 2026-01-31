@@ -6,6 +6,7 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timedelta
 from loguru import logger
+from sqlalchemy import func, select
 from app import db
 from app.models.watch_history import WatchHistory
 from app.models.settings import Settings
