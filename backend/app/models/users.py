@@ -5,18 +5,18 @@
 
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import UserMixin
 from app import db
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 
 
-class User(UserMixin, db.Model):
+class User(db.Model):
     """用户表"""
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
     token = db.Column(db.String(64), unique=True, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=to_utc_naive)
 
@@ -46,6 +46,7 @@ class User(UserMixin, db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'must_change_password': bool(self.must_change_password),
             'token': self.token,
             'created_at': to_iso8601_utc(self.created_at)  # UTC 时间 + Z 后缀
         }
