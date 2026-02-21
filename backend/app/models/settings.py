@@ -26,6 +26,9 @@ class Settings(db.Model):
     KEY_HEALTH_CHECK_THREADS = 'health_check_threads'
     KEY_UDPXY_ENABLED = 'udpxy_enabled'
     KEY_UDPXY_URL = 'udpxy_url'
+    KEY_HEARTBEAT_INTERVAL_SECONDS = 'heartbeat_interval_seconds'
+    KEY_ACTIVE_HEARTBEAT_TIMEOUT_SECONDS = 'active_heartbeat_timeout_seconds'
+    KEY_HISTORY_WORKER_INTERVAL_SECONDS = 'history_worker_interval_seconds'
     
     @classmethod
     def get(cls, key, default=None):

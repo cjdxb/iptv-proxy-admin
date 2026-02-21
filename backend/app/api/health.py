@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify
 from app.models.channel import Channel
 from app.services.health_checker import check_channel_health, check_all_channels
 from app.utils.auth import login_required
+from app.utils.datetime_utils import to_iso8601_utc
 
 bp = Blueprint('health', __name__, url_prefix='/api/health')
 
@@ -23,7 +24,7 @@ def check_single_channel(channel_id):
         'channel_id': channel.id,
         'channel_name': channel.name,
         'is_healthy': is_healthy,
-        'last_check': channel.last_check.isoformat() if channel.last_check else None
+        'last_check': to_iso8601_utc(channel.last_check)
     })
 
 

@@ -4,11 +4,10 @@
 """
 
 import secrets
-from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 from app import db
-from app.utils.datetime_utils import to_iso8601_utc
+from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 
 
 class User(UserMixin, db.Model):
@@ -19,7 +18,15 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256), nullable=False)
     token = db.Column(db.String(64), unique=True, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=to_utc_naive)
+
+    watch_history = db.relationship(
+        'WatchHistory',
+        primaryjoin='User.id == WatchHistory.user_id',
+        foreign_keys='WatchHistory.user_id',
+        back_populates='user',
+        lazy='dynamic'
+    )
     
     def set_password(self, password):
         """设置密码"""

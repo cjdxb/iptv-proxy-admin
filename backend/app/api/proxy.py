@@ -5,21 +5,20 @@
 
 import requests
 import uuid
-from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from loguru import logger
+from sqlalchemy import select
 from app import db
 from app.models.user import User
 from app.models.channel import Channel
 from app.models.watch_history import WatchHistory
-from app.config import config
+from app.models.active_connection import ActiveConnection
+from app.config import get_heartbeat_interval_seconds
 from app.utils.auth import login_required
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
+from app.services.watch_history_saver import update_connection_heartbeat, close_active_connection
 
 bp = Blueprint('proxy', __name__, url_prefix='/api/proxy')
-
-# 存储当前活跃的代理连接
-active_connections = {}
 
 
 def get_udpxy_url(original_url):
@@ -80,25 +79,39 @@ def stream_channel(channel_id):
     else:
         logger.debug(f"HTTP 源: {stream_url}")
     
-    # 创建观看记录
-    watch_record = WatchHistory(user_id=user.id, channel_id=channel.id)
-    db.session.add(watch_record)
-    db.session.commit()
-    watch_record_id = watch_record.id
-
-    # 记录活跃连接（使用UUID确保唯一性）
+    # 创建观看记录 + 活跃连接（同事务）
     connection_id = f"{user.id}_{channel_id}_{uuid.uuid4().hex}"
-    start_time_utc = to_utc_naive()  # 获取 UTC 时间
-    active_connections[connection_id] = {
-        'user_id': user.id,
-        'username': user.username,
-        'channel_id': channel.id,
-        'channel_name': channel.name,
-        'start_time': to_iso8601_utc(start_time_utc),  # 使用 UTC 时间 + Z 后缀
-        'watch_record_id': watch_record_id
-    }
+    start_time_utc = to_utc_naive()
+    watch_record_id = None
+
+    try:
+        watch_record = WatchHistory(user_id=user.id, channel_id=channel.id, start_time=start_time_utc)
+        db.session.add(watch_record)
+        db.session.flush()
+        watch_record_id = watch_record.id
+
+        active_connection = ActiveConnection(
+            connection_id=connection_id,
+            watch_history_id=watch_record_id,
+            user_id=user.id,
+            channel_id=channel.id,
+            start_time=start_time_utc,
+            last_heartbeat=start_time_utc
+        )
+        db.session.add(active_connection)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"创建活跃连接失败: user_id={user.id}, channel_id={channel.id}, error={e}")
+        return jsonify({'error': '创建观看会话失败'}), 500
+
+    username = user.username
+    channel_name = channel.name
+    heartbeat_interval = get_heartbeat_interval_seconds()
+    last_heartbeat_at = start_time_utc
     
     def generate():
+        nonlocal last_heartbeat_at, heartbeat_interval
         try:
             # 从配置获取缓冲区大小（优先从数据库读取）
             from app.config import get_proxy_buffer_size
@@ -107,23 +120,34 @@ def stream_channel(channel_id):
             with requests.get(stream_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=buffer_size):
+                    now_utc = to_utc_naive()
+                    if (now_utc - last_heartbeat_at).total_seconds() >= heartbeat_interval:
+                        update_connection_heartbeat(connection_id, heartbeat_time=now_utc)
+                        last_heartbeat_at = now_utc
+                        heartbeat_interval = get_heartbeat_interval_seconds()
+
                     if chunk:
                         yield chunk
         except Exception as e:
             logger.error(f"Stream error: {e}")
         finally:
-            # 清理连接记录并保存观看时长
-            conn_info = active_connections.pop(connection_id, None)
-            if conn_info and conn_info.get('watch_record_id'):
-                try:
-                    # 使用 SQLAlchemy 2.0 兼容的方式
-                    record = db.session.get(WatchHistory, conn_info['watch_record_id'])
-                    if record:
-                        record.finish()
-                        db.session.commit()
-                        logger.debug(f"观看记录保存: 用户 {user.username}, 频道 {channel.name}, 时长 {record.duration}秒")
-                except Exception as e:
-                    logger.error(f"保存观看记录失败: {e}")
+            # 幂等结束连接：落历史 + 删除活跃连接
+            try:
+                result = close_active_connection(
+                    connection_id=connection_id,
+                    end_time=to_utc_naive(),
+                    fallback_watch_history_id=watch_record_id
+                )
+                if result.get('history_updated'):
+                    logger.debug(
+                        f"观看记录保存: 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
+                    )
+                elif result.get('history_deleted_short'):
+                    logger.debug(
+                        f"观看记录已忽略(<5秒): 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
+                    )
+            except Exception as e:
+                logger.error(f"保存观看记录失败: connection_id={connection_id}, error={e}")
     
     # 获取原始响应的 Content-Type
     try:
@@ -142,7 +166,43 @@ def stream_channel(channel_id):
 @login_required
 def get_proxy_status():
     """获取代理状态"""
-    connections = list(active_connections.values())
+    rows = db.session.execute(
+        select(
+            ActiveConnection.connection_id,
+            ActiveConnection.watch_history_id,
+            ActiveConnection.user_id,
+            User.username,
+            ActiveConnection.channel_id,
+            Channel.name.label('channel_name'),
+            ActiveConnection.start_time,
+            ActiveConnection.last_heartbeat
+        ).select_from(ActiveConnection).join(
+            User,
+            ActiveConnection.user_id == User.id,
+            isouter=True
+        ).join(
+            Channel,
+            ActiveConnection.channel_id == Channel.id,
+            isouter=True
+        ).order_by(
+            ActiveConnection.start_time.desc()
+        )
+    ).all()
+
+    connections = [
+        {
+            'connection_id': row.connection_id,
+            'watch_record_id': row.watch_history_id,
+            'user_id': row.user_id,
+            'username': row.username or '未知用户',
+            'channel_id': row.channel_id,
+            'channel_name': row.channel_name or '已删除频道',
+            'start_time': to_iso8601_utc(row.start_time),
+            'last_heartbeat': to_iso8601_utc(row.last_heartbeat)
+        }
+        for row in rows
+    ]
+
     return jsonify({
         'active_connections': len(connections),
         'connections': connections

@@ -73,13 +73,10 @@
 
           <!-- 用户信息 -->
           <el-dropdown trigger="click" @command="handleCommand">
-            <div class="header-btn user-btn" :title="authStore.user?.username">
+            <div class="header-btn user-btn" title="用户菜单">
               <div class="user-avatar">
                 {{ authStore.user?.username?.[0]?.toUpperCase() || 'U' }}
               </div>
-              <span class="username" v-show="authStore.user?.username">
-                {{ authStore.user?.username }}
-              </span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -417,7 +414,7 @@ onUnmounted(() => {
 
 /* 用户按钮样式 */
 .user-btn {
-  padding: 4px 12px 4px 4px;
+  padding: 4px;
 }
 
 .user-avatar {
@@ -439,13 +436,6 @@ onUnmounted(() => {
 .header-btn:hover .user-avatar {
   box-shadow: 0 3px 10px rgba(102, 126, 234, 0.35);
   transform: scale(1.05);
-}
-
-.username {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
 }
 
 /* 主内容区 */
@@ -480,10 +470,6 @@ onUnmounted(() => {
 
   .top-bar {
     padding: 0 16px;
-  }
-
-  .username {
-    display: none;
   }
 
   .user-btn {

@@ -27,7 +27,7 @@ def get_version():
 __version__ = get_version()
 
 
-def create_app():
+def create_app(start_background_services=True):
     """创建并配置 Flask 应用"""
     app = Flask(__name__)
     
@@ -109,13 +109,9 @@ def create_app():
         from .config import load_runtime_config_from_db
         load_runtime_config_from_db()
     
-    # 启动健康检测定时任务
-    if config.get('health_check', {}).get('enabled', True):
+    # 启动 Web 进程内后台服务
+    if start_background_services and config.get('health_check', {}).get('enabled', True):
         from .services.health_checker import start_health_checker
         start_health_checker(app)
-
-    # 启动观看历史定期保存服务
-    from .services.watch_history_saver import start_watch_history_saver
-    start_watch_history_saver(app)
 
     return app

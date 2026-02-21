@@ -8,7 +8,7 @@ IPTV Proxy Admin 使用 SQLAlchemy ORM 管理数据库，支持 SQLite 和 MySQL
 - **生产推荐：** MySQL 5.7+ / MariaDB 10.3+
 - **字符集：** utf8mb4
 - **表数量：** 5 张表
-- **关系类型：** 一对多、外键关联
+- **关系类型：** 一对多、逻辑关联（不启用数据库外键约束）
 
 ---
 
@@ -168,7 +168,7 @@ WHERE id NOT IN (SELECT DISTINCT group_id FROM channels WHERE group_id IS NOT NU
 | `name` | String | 200 | 否 | - | - | 频道名称 |
 | `url` | String | 500 | 否 | - | - | 直播源URL |
 | `logo` | String | 500 | 是 | NULL | - | 频道Logo URL |
-| `group_id` | Integer | - | 是 | NULL | 外键 | 所属分组ID |
+| `group_id` | Integer | - | 是 | NULL | 普通索引 | 所属分组ID（逻辑关联 `channel_groups.id`） |
 | `sort_order` | Integer | - | 否 | 0 | - | 排序顺序 |
 | `is_active` | Boolean | - | 否 | TRUE | - | 是否启用 |
 | `protocol` | String | 20 | 否 | 'http' | - | 协议类型 |
@@ -181,14 +181,14 @@ WHERE id NOT IN (SELECT DISTINCT group_id FROM channels WHERE group_id IS NOT NU
 #### 索引
 
 - **主键索引：** `id`
-- **外键索引：** `group_id` → `channel_groups.id`
+- **普通索引：** `group_id`
 
 #### 约束
 
 - `name` 不能为空
 - `url` 不能为空
 - `protocol` 枚举值：`http`, `https`, `rtp`, `udp`
-- `group_id` 外键关联 `channel_groups.id`（级联更新，不级联删除）
+- `group_id` 是逻辑关联字段，由应用层保证引用有效性
 
 #### 字段说明
 
@@ -253,8 +253,8 @@ SELECT * FROM channels ORDER BY updated_at DESC LIMIT 10;
 | 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
 |--------|------|------|--------|--------|------|------|
 | `id` | Integer | - | 否 | 自增 | 主键 | 记录ID |
-| `user_id` | Integer | - | 否 | - | 外键、索引 | 用户ID |
-| `channel_id` | Integer | - | 否 | - | 外键 | 频道ID |
+| `user_id` | Integer | - | 否 | - | 普通索引 | 用户ID（逻辑关联 `users.id`） |
+| `channel_id` | Integer | - | 否 | - | 普通索引 | 频道ID（逻辑关联 `channels.id`） |
 | `start_time` | DateTime | - | 否 | - | - | 开始观看时间 |
 | `end_time` | DateTime | - | 是 | NULL | - | 结束观看时间 |
 | `duration` | Integer | - | 否 | 0 | - | 观看时长（秒） |
@@ -263,14 +263,13 @@ SELECT * FROM channels ORDER BY updated_at DESC LIMIT 10;
 #### 索引
 
 - **主键索引：** `id`
-- **外键索引：** `user_id` → `users.id`
-- **外键索引：** `channel_id` → `channels.id`
+- **普通索引：** `user_id`
+- **普通索引：** `channel_id`
 - **普通索引：** `watch_date`
 
 #### 约束
 
-- `user_id` 外键关联 `users.id`
-- `channel_id` 外键关联 `channels.id`
+- `user_id`、`channel_id` 为逻辑关联字段，由应用层维护一致性
 - `duration` 单位为秒，通过 `end_time - start_time` 计算
 
 #### 数据更新机制
@@ -308,9 +307,9 @@ SELECT * FROM channels ORDER BY updated_at DESC LIMIT 10;
 - ✅ 可查询正在观看的用户（end_time 为 NULL）
 
 **数据完整性：**
-- 观看时长 > 0 的记录才会在前端显示
+- 观看时长 >= 5 秒的记录才会在前端显示
 - 异常断开的连接会保留最后一次更新的数据
-- 短时间观看（<保存间隔）可能记录为 0 秒
+- 短时间观看（<5 秒）会在结束时自动忽略，不进入历史列表
 
 #### 关联关系
 
@@ -663,6 +662,17 @@ LEFT JOIN channels c ON w.channel_id = c.id
 WHERE c.id IS NULL;
 ```
 
+### 移除外键约束（MySQL）
+
+```bash
+cd backend
+python scripts/remove_foreign_keys.py
+```
+
+说明：
+- 该脚本会扫描当前 MySQL 库中的所有 `FOREIGN KEY` 约束并逐个删除。
+- SQLite 默认不执行该脚本（会直接提示并退出）。
+
 ---
 
 ## 总结
@@ -675,4 +685,4 @@ IPTV Proxy Admin 的数据库设计简洁高效，包含 5 张核心表：
 4. **watch_history** - 观看历史
 5. **settings** - 系统配置
 
-所有表之间通过外键关联，保证数据一致性。支持 SQLite 和 MySQL 两种数据库。
+表之间通过逻辑关联和应用层校验保持一致性，默认不依赖数据库外键约束。支持 SQLite 和 MySQL 两种数据库。

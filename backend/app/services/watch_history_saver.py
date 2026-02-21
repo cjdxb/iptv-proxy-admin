@@ -1,106 +1,260 @@
 # -*- coding: utf-8 -*-
 """
-观看历史定期保存服务
-每隔一段时间自动保存正在观看的记录
+历史记录 worker 服务（数据库共享状态）
 """
 
-from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import timedelta
+from apscheduler.schedulers.blocking import BlockingScheduler
 from loguru import logger
 from app import db
+from app.models.active_connection import ActiveConnection
 from app.models.watch_history import WatchHistory
-from app.utils.datetime_utils import to_utc_naive, to_iso8601_utc
+from app.utils.datetime_utils import to_utc_naive
+
+MIN_HISTORY_DURATION_SECONDS = WatchHistory.MIN_VALID_DURATION_SECONDS
 
 
-def save_active_watch_records():
-    """
-    定期保存所有活跃的观看记录
-    即使用户还在观看，也会更新 end_time 和 duration
-    """
-    from app.api.proxy import active_connections
+def _calculate_duration_seconds(start_time, end_time, connection_id=None):
+    duration_seconds = int((end_time - start_time).total_seconds())
+    if duration_seconds < 0:
+        logger.warning(
+            f"观看记录时长为负数: connection_id={connection_id}, "
+            f"start={start_time}, end={end_time}, duration={duration_seconds}，按0处理并保持单调"
+        )
+        return 0
+    return duration_seconds
 
-    if not active_connections:
-        return
 
-    logger.debug(f"定期保存观看记录: {len(active_connections)} 个活跃连接")
+def _finalize_watch_record(record, end_time, connection_id=None):
+    final_end_time = end_time or to_utc_naive()
 
-    saved_count = 0
-    cleaned_count = 0
-    now = to_utc_naive()  # 使用 UTC 时间
+    # 一旦已结束，后续并发写入沿用既有 end_time，避免 duration 超过 end_time 对应值
+    effective_end_time = record.end_time or final_end_time
+    calculated_duration = _calculate_duration_seconds(record.start_time, effective_end_time, connection_id=connection_id)
+    record.update_duration_monotonic(calculated_duration)
 
-    for connection_id, conn_info in list(active_connections.items()):
-        watch_record_id = conn_info.get('watch_record_id')
-        if not watch_record_id:
-            continue
+    if record.end_time is None:
+        record.end_time = final_end_time
 
-        try:
-            # 使用 SQLAlchemy 2.0 兼容的方式
-            record = db.session.get(WatchHistory, watch_record_id)
-            if record:
-                # 更新结束时间和时长（增量保存）
-                record.end_time = now
-                calculated_duration = int((record.end_time - record.start_time).total_seconds())
 
-                # 防止负数时长（可能由于系统时间回退或时区问题导致）
-                if calculated_duration < 0:
-                    logger.warning(f"观看记录时长为负数: connection_id={connection_id}, start={record.start_time}, end={record.end_time}, duration={calculated_duration}，已设置为0")
-                    record.duration = 0
-                else:
-                    record.duration = calculated_duration
-
-                # 更新连接的最后更新时间
-                conn_info['last_update'] = to_iso8601_utc(now)  # UTC 时间 + Z 后缀
-                saved_count += 1
-
-                # 清理超过 2 小时没更新的僵尸连接（可能是异常断开）
-                if record.duration > 7200:  # 2 小时 = 7200 秒
-                    logger.warning(f"检测到长时间观看记录，可能是异常连接: {connection_id}, 时长 {record.duration}秒")
-                    # 可以选择清理或继续保留
-            else:
-                # 记录不存在，清理连接
-                active_connections.pop(connection_id, None)
-                cleaned_count += 1
-        except Exception as e:
-            logger.error(f"保存观看记录失败 (ID: {watch_record_id}): {e}")
-
-    # 批量提交
-    if saved_count > 0:
-        try:
+def update_connection_heartbeat(connection_id, heartbeat_time=None):
+    """更新活跃连接心跳时间"""
+    heartbeat_time = heartbeat_time or to_utc_naive()
+    try:
+        updated_rows = ActiveConnection.query.filter_by(connection_id=connection_id).update(
+            {ActiveConnection.last_heartbeat: heartbeat_time},
+            synchronize_session=False
+        )
+        if updated_rows > 0:
             db.session.commit()
-            logger.info(f"已保存 {saved_count} 条观看记录" + (f", 清理 {cleaned_count} 个无效连接" if cleaned_count > 0 else ""))
-        except Exception as e:
-            logger.error(f"提交观看记录失败: {e}")
-            db.session.rollback()
+            return True
+        return False
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"更新连接心跳失败: connection_id={connection_id}, error={e}")
+        return False
 
 
-def start_watch_history_saver(app):
-    """启动观看历史定期保存服务"""
-    from app.config import config
+def close_active_connection(connection_id, end_time=None, fallback_watch_history_id=None):
+    """结束活跃连接并幂等写入历史"""
+    end_time = end_time or to_utc_naive()
+    result = {
+        'closed': False,
+        'history_updated': False,
+        'history_deleted_short': False,
+        'duration': None
+    }
 
-    # 获取保存间隔（默认 60 秒）
-    save_interval = config.get('watch_history', {}).get('save_interval', 60)
+    try:
+        active_conn = db.session.get(ActiveConnection, connection_id)
+        watch_history_id = fallback_watch_history_id
 
-    scheduler = BackgroundScheduler()
+        if active_conn:
+            watch_history_id = active_conn.watch_history_id
+            result['closed'] = True
 
-    # 使用 app_context 执行数据库操作
+        if watch_history_id:
+            record = db.session.get(WatchHistory, watch_history_id)
+            if record:
+                _finalize_watch_record(record, end_time, connection_id=connection_id)
+                result['duration'] = record.duration
+                if (record.duration or 0) < MIN_HISTORY_DURATION_SECONDS:
+                    db.session.delete(record)
+                    result['history_deleted_short'] = True
+                else:
+                    result['history_updated'] = True
+
+        if active_conn:
+            db.session.delete(active_conn)
+
+        if result['closed'] or result['history_updated'] or result['history_deleted_short']:
+            db.session.commit()
+
+        return result
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def save_active_watch_records(now=None):
+    """
+    定时保存所有活跃观看记录（仅更新 duration，不写 end_time）
+    返回:
+        dict: {'updated': int, 'cleaned': int}
+    """
+    now = now or to_utc_naive()
+    active_rows = ActiveConnection.query.all()
+    if not active_rows:
+        return {'updated': 0, 'cleaned': 0}
+
+    updated_count = 0
+    cleaned_count = 0
+
+    try:
+        for active_conn in active_rows:
+            record = db.session.get(WatchHistory, active_conn.watch_history_id)
+            if not record:
+                db.session.delete(active_conn)
+                cleaned_count += 1
+                continue
+
+            if record.end_time is not None:
+                db.session.delete(active_conn)
+                cleaned_count += 1
+                continue
+
+            calculated_duration = _calculate_duration_seconds(
+                record.start_time,
+                now,
+                connection_id=active_conn.connection_id
+            )
+            old_duration = record.duration or 0
+            record.update_duration_monotonic(calculated_duration)
+            if record.duration != old_duration:
+                updated_count += 1
+
+        if updated_count > 0 or cleaned_count > 0:
+            db.session.commit()
+
+        return {'updated': updated_count, 'cleaned': cleaned_count}
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def cleanup_stale_active_connections(timeout_seconds, now=None):
+    """
+    回收心跳超时的活跃连接，并将历史标记为结束
+    返回:
+        dict: {'recycled': int, 'finalized': int}
+    """
+    now = now or to_utc_naive()
+    timeout_seconds = max(1, int(timeout_seconds))
+    cutoff_time = now - timedelta(seconds=timeout_seconds)
+
+    stale_rows = ActiveConnection.query.filter(
+        ActiveConnection.last_heartbeat < cutoff_time
+    ).all()
+
+    if not stale_rows:
+        return {'recycled': 0, 'finalized': 0}
+
+    recycled_count = 0
+    finalized_count = 0
+
+    try:
+        for active_conn in stale_rows:
+            record = db.session.get(WatchHistory, active_conn.watch_history_id)
+            if record:
+                _finalize_watch_record(
+                    record,
+                    active_conn.last_heartbeat or now,
+                    connection_id=active_conn.connection_id
+                )
+                if (record.duration or 0) < MIN_HISTORY_DURATION_SECONDS:
+                    db.session.delete(record)
+                else:
+                    finalized_count += 1
+
+            db.session.delete(active_conn)
+            recycled_count += 1
+
+        db.session.commit()
+        return {'recycled': recycled_count, 'finalized': finalized_count}
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def run_history_worker_cycle(timeout_seconds):
+    """执行一次 worker 周期：保存活跃时长 + 回收僵尸连接"""
+    save_result = save_active_watch_records()
+    cleanup_result = cleanup_stale_active_connections(timeout_seconds=timeout_seconds)
+    return {
+        'saved_updated': save_result['updated'],
+        'saved_cleaned': save_result['cleaned'],
+        'recycled': cleanup_result['recycled'],
+        'recycled_finalized': cleanup_result['finalized']
+    }
+
+
+def start_history_worker(app):
+    """启动独立 history-worker（阻塞运行）"""
+    from app.config import (
+        get_active_heartbeat_timeout_seconds,
+        get_history_worker_interval_seconds,
+        load_runtime_config_from_db
+    )
+
+    worker_interval = get_history_worker_interval_seconds()
+    startup_heartbeat_timeout = get_active_heartbeat_timeout_seconds()
+
+    scheduler = BlockingScheduler()
+
     def job():
         with app.app_context():
             try:
-                save_active_watch_records()
+                # 独立 worker 进程需自行刷新运行时配置
+                load_runtime_config_from_db()
+                heartbeat_timeout = get_active_heartbeat_timeout_seconds()
+                result = run_history_worker_cycle(timeout_seconds=heartbeat_timeout)
+                if any(result.values()):
+                    logger.info(
+                        "history-worker执行完成: "
+                        f"时长更新={result['saved_updated']}, "
+                        f"清理无效活跃={result['saved_cleaned']}, "
+                        f"回收僵尸={result['recycled']}, "
+                        f"僵尸落历史={result['recycled_finalized']}"
+                    )
             except Exception as e:
-                logger.error(f"观看历史保存任务执行失败: {e}")
+                logger.error(f"history-worker执行失败: {e}")
 
-    # 添加定时任务
+    # 启动后先执行一次，减少首次保存等待时间
+    job()
+
     scheduler.add_job(
         job,
         'interval',
-        seconds=save_interval,
-        id='save_watch_history',
-        name='定期保存观看历史',
-        replace_existing=True
+        seconds=worker_interval,
+        id='history_worker',
+        name='历史记录worker',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True
     )
 
+    logger.info(
+        "history-worker已启动: "
+        f"interval={worker_interval}s, heartbeat_timeout={startup_heartbeat_timeout}s"
+    )
     scheduler.start()
-    logger.info(f"观看历史定期保存服务已启动 (间隔: {save_interval}秒)")
 
     return scheduler
+
+
+def start_watch_history_saver(app):
+    """
+    兼容旧入口（阶段B后建议使用独立 history_worker.py 启动）
+    """
+    logger.warning("start_watch_history_saver 已废弃，请改用独立 history-worker 进程")
+    return start_history_worker(app)

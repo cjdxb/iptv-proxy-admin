@@ -3,7 +3,6 @@
 观看历史模型
 """
 
-from datetime import datetime, date
 from app import db
 from app.utils.datetime_utils import to_utc_naive, to_iso8601_utc, to_iso8601_date
 
@@ -11,38 +10,62 @@ from app.utils.datetime_utils import to_utc_naive, to_iso8601_utc, to_iso8601_da
 class WatchHistory(db.Model):
     """用户观看历史记录"""
     __tablename__ = 'watch_history'
+    MIN_VALID_DURATION_SECONDS = 5
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    channel_id = db.Column(db.Integer, db.ForeignKey('channels.id'), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False, index=True)
+    channel_id = db.Column(db.Integer, nullable=False, index=True)
     start_time = db.Column(db.DateTime, nullable=False)
     end_time = db.Column(db.DateTime)
     duration = db.Column(db.Integer, default=0)  # 观看时长（秒）
     watch_date = db.Column(db.Date, nullable=False, index=True)  # 用于按日汇总
     
-    # 关联
-    user = db.relationship('User', backref=db.backref('watch_history', lazy='dynamic'))
-    channel = db.relationship('Channel', backref=db.backref('watch_history', lazy='dynamic'))
+    # 关联（无数据库外键约束，使用显式关联条件）
+    user = db.relationship(
+        'User',
+        primaryjoin='WatchHistory.user_id == User.id',
+        foreign_keys=[user_id],
+        back_populates='watch_history'
+    )
+    channel = db.relationship(
+        'Channel',
+        primaryjoin='WatchHistory.channel_id == Channel.id',
+        foreign_keys=[channel_id],
+        back_populates='watch_history'
+    )
     
     def __init__(self, user_id, channel_id, start_time=None):
         self.user_id = user_id
         self.channel_id = channel_id
         self.start_time = start_time or to_utc_naive()  # 使用 UTC 时间
         self.watch_date = self.start_time.date()
+
+    def update_duration_monotonic(self, duration_seconds):
+        """单调更新观看时长，防止并发或时钟抖动导致时长回退"""
+        normalized_duration = max(0, int(duration_seconds))
+        current_duration = self.duration or 0
+
+        if normalized_duration > current_duration:
+            self.duration = normalized_duration
+            return normalized_duration
+
+        return current_duration
     
     def finish(self):
         """结束观看，计算时长"""
         from loguru import logger
 
-        self.end_time = to_utc_naive()  # 使用 UTC 时间
+        if self.end_time is None:
+            self.end_time = to_utc_naive()  # 使用 UTC 时间
+
         calculated_duration = int((self.end_time - self.start_time).total_seconds())
 
         # 防止负数时长（可能由于系统时间回退或时区问题导致）
         if calculated_duration < 0:
             logger.warning(f"观看记录时长为负数: start={self.start_time}, end={self.end_time}, duration={calculated_duration}，已设置为0")
-            self.duration = 0
-        else:
-            self.duration = calculated_duration
+            calculated_duration = 0
+
+        self.update_duration_monotonic(calculated_duration)
     
     def to_dict(self):
         return {
@@ -65,7 +88,7 @@ class WatchHistory(db.Model):
         from sqlalchemy import func
         from datetime import timedelta
         
-        end_date = date.today()
+        end_date = to_utc_naive().date()
         start_date = end_date - timedelta(days=days - 1)
         
         query = db.session.query(
@@ -73,7 +96,8 @@ class WatchHistory(db.Model):
             func.sum(WatchHistory.duration).label('total_duration')
         ).filter(
             WatchHistory.watch_date >= start_date,
-            WatchHistory.watch_date <= end_date
+            WatchHistory.watch_date <= end_date,
+            WatchHistory.duration >= WatchHistory.MIN_VALID_DURATION_SECONDS
         )
         
         if user_id:
@@ -108,7 +132,7 @@ class WatchHistory(db.Model):
         from datetime import timedelta
         from app.models.channel import Channel
         
-        end_date = date.today()
+        end_date = to_utc_naive().date()
         start_date = end_date - timedelta(days=days - 1)
         
         query = db.session.query(
@@ -121,7 +145,7 @@ class WatchHistory(db.Model):
         ).filter(
             WatchHistory.watch_date >= start_date,
             WatchHistory.watch_date <= end_date,
-            WatchHistory.duration > 0
+            WatchHistory.duration >= WatchHistory.MIN_VALID_DURATION_SECONDS
         ).group_by(
             WatchHistory.channel_id, Channel.name
         ).order_by(
@@ -139,4 +163,3 @@ class WatchHistory(db.Model):
             }
             for row in results
         ]
-

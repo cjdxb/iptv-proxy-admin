@@ -5,11 +5,11 @@
 
 import requests
 import socket
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 from app.config import config
+from app.utils.datetime_utils import to_utc_naive
 
 scheduler = None
 
@@ -118,7 +118,7 @@ def check_channel_health(channel, max_retries=None):
     
     # 更新频道状态
     channel.is_healthy = is_healthy
-    channel.last_check = datetime.utcnow()
+    channel.last_check = to_utc_naive()
     db.session.commit()
     
     return is_healthy
@@ -211,4 +211,3 @@ def stop_health_checker():
     if scheduler:
         scheduler.shutdown()
         scheduler = None
-

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from app import db
 from app.models.channel import Channel, ChannelGroup
 from app.models.watch_history import WatchHistory
-from app.api.proxy import active_connections
+from app.models.active_connection import ActiveConnection
 from app.utils.auth import login_required
 from app import __version__
 
@@ -46,7 +46,9 @@ def get_dashboard():
             protocol_stats[protocol] = count
     
     # 当前代理连接数
-    current_connections = len(active_connections)
+    current_connections = db.session.scalar(
+        select(func.count()).select_from(ActiveConnection)
+    )
     
     # 获取不健康的频道（最多显示 10 个）
     unhealthy_list = Channel.query.filter_by(is_active=True, is_healthy=False).limit(10).all()
@@ -123,4 +125,3 @@ def get_version():
         'version': __version__,
         'name': 'IPTV Proxy Admin'
     })
-

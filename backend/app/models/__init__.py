@@ -7,6 +7,6 @@ from .user import User
 from .channel import Channel, ChannelGroup
 from .settings import Settings
 from .watch_history import WatchHistory
+from .active_connection import ActiveConnection
 
-__all__ = ['User', 'Channel', 'ChannelGroup', 'Settings', 'WatchHistory']
-
+__all__ = ['User', 'Channel', 'ChannelGroup', 'Settings', 'WatchHistory', 'ActiveConnection']
