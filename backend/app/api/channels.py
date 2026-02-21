@@ -5,7 +5,8 @@
 
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models.channel import Channel, ChannelGroup
+from app.models.channel import Channel
+from app.models.channel_group import ChannelGroup
 from app.utils.auth import login_required
 
 bp = Blueprint('channels', __name__, url_prefix='/api/channels')

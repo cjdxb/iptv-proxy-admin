@@ -34,6 +34,11 @@ const routes = [
                 component: () => import('@/views/Settings.vue')
             },
             {
+                path: 'account',
+                name: 'AccountSettings',
+                component: () => import('@/views/AccountSettings.vue')
+            },
+            {
                 path: 'subscription',
                 name: 'Subscription',
                 component: () => import('@/views/Subscription.vue')
@@ -53,13 +58,16 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
     const authStore = useAuthStore()
+    await authStore.initializeAuth()
 
     if (to.meta.requiresAuth !== false && !authStore.isAuthenticated) {
         next('/login')
+    } else if (authStore.isAuthenticated && authStore.mustChangePassword && to.path !== '/account') {
+        next('/account')
     } else if (to.path === '/login' && authStore.isAuthenticated) {
-        next('/')
+        next(authStore.mustChangePassword ? '/account' : '/')
     } else {
         next()
     }

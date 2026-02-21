@@ -31,8 +31,11 @@ def load_config():
             'password': os.getenv('MYSQL_PASSWORD', 'root'),
             'db': os.getenv('MYSQL_DB', 'iptv')
         },
-        'session': {
-            'secret_key': os.getenv('SESSION_SECRET_KEY', 'default-secret-key')
+        'jwt': {
+            'secret_key': os.getenv('JWT_SECRET_KEY', 'default-jwt-secret-key'),
+            'algorithm': os.getenv('JWT_ALGORITHM', 'HS256'),
+            'access_expires_hours': int(os.getenv('JWT_ACCESS_EXPIRES_HOURS', 24)),
+            'refresh_expires_days': int(os.getenv('JWT_REFRESH_EXPIRES_DAYS', 7))
         },
         'udpxy': {
             'enabled': os.getenv('UDPXY_ENABLED', 'false').lower() == 'true',
@@ -49,7 +52,13 @@ def load_config():
             'buffer_size': int(os.getenv('PROXY_BUFFER_SIZE', 8192))
         },
         'watch_history': {
-            'save_interval': int(os.getenv('WATCH_HISTORY_SAVE_INTERVAL', 60))
+            # 兼容旧配置（阶段B后由 HISTORY_WORKER_INTERVAL_SECONDS 替代）
+            'save_interval': int(os.getenv('WATCH_HISTORY_SAVE_INTERVAL', 60)),
+            'heartbeat_interval_seconds': int(os.getenv('HEARTBEAT_INTERVAL_SECONDS', 10)),
+            'active_heartbeat_timeout_seconds': int(os.getenv('ACTIVE_HEARTBEAT_TIMEOUT_SECONDS', 45)),
+            'history_worker_interval_seconds': int(
+                os.getenv('HISTORY_WORKER_INTERVAL_SECONDS', os.getenv('WATCH_HISTORY_SAVE_INTERVAL', 15))
+            )
         }
     }
 
@@ -58,6 +67,17 @@ def load_config():
 
 # 运行时可更新的配置（从数据库加载）
 _runtime_config = {}
+
+
+def _parse_positive_int(raw_value, default_value):
+    """解析正整数配置，非法值回退默认值"""
+    try:
+        value = int(raw_value)
+        if value < 1:
+            return default_value
+        return value
+    except (TypeError, ValueError):
+        return default_value
 
 def get_runtime_config(key, default=None):
     """获取运行时配置（优先从数据库读取）"""
@@ -103,6 +123,36 @@ def load_runtime_config_from_db():
         if udpxy_url:
             _runtime_config['udpxy_url'] = udpxy_url
             logger.info(f"从数据库加载配置: udpxy_url={udpxy_url}")
+
+        # 加载播放心跳间隔
+        heartbeat_interval_seconds = Settings.get('heartbeat_interval_seconds')
+        if heartbeat_interval_seconds is not None:
+            parsed_value = _parse_positive_int(
+                heartbeat_interval_seconds,
+                config.get('watch_history', {}).get('heartbeat_interval_seconds', 10)
+            )
+            _runtime_config['heartbeat_interval_seconds'] = parsed_value
+            logger.info(f"从数据库加载配置: heartbeat_interval_seconds={parsed_value}")
+
+        # 加载活跃连接心跳超时阈值
+        active_heartbeat_timeout_seconds = Settings.get('active_heartbeat_timeout_seconds')
+        if active_heartbeat_timeout_seconds is not None:
+            parsed_value = _parse_positive_int(
+                active_heartbeat_timeout_seconds,
+                config.get('watch_history', {}).get('active_heartbeat_timeout_seconds', 45)
+            )
+            _runtime_config['active_heartbeat_timeout_seconds'] = parsed_value
+            logger.info(f"从数据库加载配置: active_heartbeat_timeout_seconds={parsed_value}")
+
+        # 加载 history-worker 扫描间隔（需要重启 worker 生效）
+        history_worker_interval_seconds = Settings.get('history_worker_interval_seconds')
+        if history_worker_interval_seconds is not None:
+            parsed_value = _parse_positive_int(
+                history_worker_interval_seconds,
+                config.get('watch_history', {}).get('history_worker_interval_seconds', 15)
+            )
+            _runtime_config['history_worker_interval_seconds'] = parsed_value
+            logger.info(f"从数据库加载配置: history_worker_interval_seconds={parsed_value}")
 
         return True
     except Exception as e:
@@ -153,6 +203,30 @@ def get_udpxy_url():
     if runtime_value:
         return runtime_value
     return config.get('udpxy', {}).get('url', 'http://localhost:4022')
+
+
+def get_heartbeat_interval_seconds():
+    """获取播放心跳间隔（秒，优先运行时配置）"""
+    runtime_value = get_runtime_config('heartbeat_interval_seconds')
+    if runtime_value is not None:
+        return runtime_value
+    return max(1, int(config.get('watch_history', {}).get('heartbeat_interval_seconds', 10)))
+
+
+def get_active_heartbeat_timeout_seconds():
+    """获取活跃连接心跳超时阈值（秒，优先运行时配置）"""
+    runtime_value = get_runtime_config('active_heartbeat_timeout_seconds')
+    if runtime_value is not None:
+        return runtime_value
+    return max(1, int(config.get('watch_history', {}).get('active_heartbeat_timeout_seconds', 45)))
+
+
+def get_history_worker_interval_seconds():
+    """获取 history-worker 扫描间隔（秒，优先运行时配置）"""
+    runtime_value = get_runtime_config('history_worker_interval_seconds')
+    if runtime_value is not None:
+        return runtime_value
+    return max(1, int(config.get('watch_history', {}).get('history_worker_interval_seconds', 15)))
 
 # 全局配置对象
 config = load_config()

@@ -1,38 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-频道和分组模型
+频道模型
 """
 
 import re
-from datetime import datetime
 from app import db
-from app.utils.datetime_utils import to_iso8601_utc
-
-
-class ChannelGroup(db.Model):
-    """频道分组表"""
-    __tablename__ = 'channel_groups'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # 关联频道（不级联删除）
-    channels = db.relationship('Channel', backref='group', lazy='dynamic')
-    
-    def to_dict(self, include_channels=False):
-        """转换为字典"""
-        data = {
-            'id': self.id,
-            'name': self.name,
-            'sort_order': self.sort_order,
-            'channel_count': self.channels.count(),
-            'created_at': to_iso8601_utc(self.created_at)  # UTC 时间 + Z 后缀
-        }
-        if include_channels:
-            data['channels'] = [ch.to_dict() for ch in self.channels.order_by(Channel.sort_order).all()]
-        return data
+from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 
 
 class Channel(db.Model):
@@ -43,7 +16,7 @@ class Channel(db.Model):
     name = db.Column(db.String(200), nullable=False)
     url = db.Column(db.String(500), nullable=False)
     logo = db.Column(db.String(500), nullable=True)
-    group_id = db.Column(db.Integer, db.ForeignKey('channel_groups.id'), nullable=True)
+    group_id = db.Column(db.Integer, nullable=True, index=True)
     sort_order = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     protocol = db.Column(db.String(20), default='http')  # http, https, rtp, udp
@@ -53,8 +26,22 @@ class Channel(db.Model):
     last_check = db.Column(db.DateTime, nullable=True)
     is_healthy = db.Column(db.Boolean, default=True)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=to_utc_naive)
+    updated_at = db.Column(db.DateTime, default=to_utc_naive, onupdate=to_utc_naive)
+
+    group = db.relationship(
+        'ChannelGroup',
+        primaryjoin='Channel.group_id == ChannelGroup.id',
+        foreign_keys=[group_id],
+        back_populates='channels'
+    )
+    watch_history = db.relationship(
+        'WatchHistory',
+        primaryjoin='Channel.id == WatchHistory.channel_id',
+        foreign_keys='WatchHistory.channel_id',
+        back_populates='channel',
+        lazy='dynamic'
+    )
     
     def detect_protocol(self):
         """自动检测协议类型"""

@@ -3,13 +3,12 @@
 订阅链接 API
 """
 
-from flask import Blueprint, request, jsonify, Response, url_for
-from flask_login import current_user
-from app.models.user import User
-from app.models.channel import Channel, ChannelGroup
+from flask import Blueprint, request, jsonify, Response
+from app.models.users import Users
+from app.models.channel import Channel
+from app.models.channel_group import ChannelGroup
 from app.models.settings import Settings
-from app.config import config
-from app.utils.auth import login_required
+from app.utils.auth import login_required, get_current_user
 
 bp = Blueprint('subscription', __name__, url_prefix='/api/subscription')
 
@@ -28,7 +27,7 @@ def get_m3u():
     if not token:
         return jsonify({'error': '缺少 Token'}), 401
     
-    user = User.query.filter_by(token=token).first()
+    user = Users.query.filter_by(token=token).first()
     if not user:
         return jsonify({'error': 'Token 无效'}), 401
     
@@ -83,7 +82,7 @@ def get_txt():
     if not token:
         return jsonify({'error': '缺少 Token'}), 401
     
-    user = User.query.filter_by(token=token).first()
+    user = Users.query.filter_by(token=token).first()
     if not user:
         return jsonify({'error': 'Token 无效'}), 401
     
@@ -124,10 +123,11 @@ def get_txt():
 @login_required
 def get_subscription_urls():
     """获取订阅链接地址"""
+    user = get_current_user()
     base_url = request.host_url.rstrip('/')
     
     return jsonify({
-        'm3u_url': f"{base_url}/api/subscription/m3u?token={current_user.token}",
-        'txt_url': f"{base_url}/api/subscription/txt?token={current_user.token}",
-        'token': current_user.token
+        'm3u_url': f"{base_url}/api/subscription/m3u?token={user.token}",
+        'txt_url': f"{base_url}/api/subscription/txt?token={user.token}",
+        'token': user.token
     })

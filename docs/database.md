@@ -4,675 +4,295 @@
 
 IPTV Proxy Admin 使用 SQLAlchemy ORM 管理数据库，支持 SQLite 和 MySQL 两种数据库。
 
-- **默认数据库：** SQLite (`backend/data/iptv.db`)
-- **生产推荐：** MySQL 5.7+ / MariaDB 10.3+
-- **字符集：** utf8mb4
-- **表数量：** 5 张表
-- **关系类型：** 一对多、外键关联
+- 默认数据库：SQLite（`backend/data/iptv.db`）
+- 生产推荐：MySQL 5.7+ / MariaDB 10.3+
+- 字符集：`utf8mb4`（MySQL）
+- 当前核心表：7 张
+- 关系类型：全部使用应用层逻辑关联（不启用数据库外键约束）
 
 ---
 
 ## 数据库架构图
 
-```
-┌─────────────┐         ┌──────────────┐
-│   users     │         │channel_groups│
-│  (用户表)   │         │ (分组表)     │
-└──────┬──────┘         └───────┬──────┘
-       │                        │
-       │ 1                    1 │
-       │                        │
-       │ n                    n │
-       │                 ┌──────┴──────┐
-       │                 │  channels   │
-       │                 │  (频道表)   │
-       │                 └──────┬──────┘
-       │                        │
-       │                      1 │
-       │                        │
-       │                      n │
-       │                ┌───────┴────────┐
-       └────────────────┤ watch_history  │
-                        │ (观看历史表)   │
-                        └────────────────┘
+```text
+┌───────────────┐        ┌──────────────────┐
+│     users     │ 1    n │  refresh_tokens  │
+│   (用户表)    ├────────┤   (刷新令牌表)    │
+└───────┬───────┘        └──────────────────┘
+        │
+        │ 1
+        │
+        │ n
+┌───────▼──────────┐      ┌──────────────────┐
+│   watch_history  │ 1  1 │ active_connections│
+│   (观看历史表)    ├──────┤  (活跃连接表)     │
+└───────▲──────────┘      └──────────────────┘
+        │
+        │ n
+        │
+        │ 1
+┌───────┴───────┐        ┌──────────────────┐
+│   channels    │ n    1 │  channel_groups  │
+│   (频道表)     ├────────┤    (分组表)      │
+└───────────────┘        └──────────────────┘
 
-                        ┌──────────────┐
-                        │   settings   │
-                        │ (系统设置表) │
-                        └──────────────┘
+┌───────────────┐
+│   settings    │
+│   (系统设置表) │
+└───────────────┘
 ```
 
 ---
 
 ## 表结构详细说明
 
-### 1. users（用户表）
+### 1. `users`（用户表）
 
-用户账户信息表，存储管理员和用户的登录凭证及订阅 Token。
+存储后台登录用户、订阅 Token 以及是否必须改密状态。
 
-#### 表结构
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 用户 ID |
+| `username` | String(80) | 否 | - | 唯一索引 | 登录用户名 |
+| `password_hash` | String(256) | 否 | - | - | 密码哈希（Werkzeug） |
+| `must_change_password` | Boolean | 否 | `false` | - | 是否必须先修改密码 |
+| `token` | String(64) | 是 | `NULL` | 唯一索引 | 订阅/播放 Token |
+| `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
 
-| 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
-|--------|------|------|--------|--------|------|------|
-| `id` | Integer | - | 否 | 自增 | 主键 | 用户ID |
-| `username` | String | 80 | 否 | - | 唯一索引 | 用户名 |
-| `password_hash` | String | 256 | 否 | - | - | 密码哈希（bcrypt） |
-| `token` | String | 64 | 是 | NULL | 唯一索引 | 订阅Token（64字节） |
-| `created_at` | DateTime | - | 否 | CURRENT_TIMESTAMP | - | 创建时间 |
-
-#### 索引
-
-- **主键索引：** `id`
-- **唯一索引：** `username`
-- **唯一索引：** `token`
-
-#### 约束
-
-- `username` 必须唯一
-- `token` 必须唯一（允许 NULL）
-- `password_hash` 使用 Werkzeug 的 `generate_password_hash()` 生成
-
-#### 默认数据
-
-```sql
--- 默认管理员账户
-INSERT INTO users (username, password_hash, token)
-VALUES ('admin', '<bcrypt_hash>', '<random_token>');
--- 默认密码: admin123（首次登录后必须修改）
-```
-
-#### 关联关系
-
-- **一对多：** 一个用户可以有多条观看历史记录 (`watch_history`)
-
-#### 示例查询
-
-```sql
--- 查询所有用户
-SELECT id, username, created_at FROM users;
-
--- 通过 Token 查找用户
-SELECT * FROM users WHERE token = 'your_token_here';
-
--- 查询用户的观看历史
-SELECT u.username, COUNT(w.id) as watch_count
-FROM users u
-LEFT JOIN watch_history w ON u.id = w.user_id
-GROUP BY u.id;
-```
+关键说明：
+- 默认管理员 `admin` 初始密码 `admin123`，并会标记 `must_change_password=true`。
+- 旧版本数据库启动时会自动补齐 `must_change_password` 列。
 
 ---
 
-### 2. channel_groups（频道分组表）
+### 2. `refresh_tokens`（刷新令牌表）
 
-频道分组表，用于组织和管理频道分类。
+存储 JWT refresh token 的哈希值（不存明文），支持轮换与吊销。
 
-#### 表结构
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 记录 ID |
+| `user_id` | Integer | 否 | - | 普通索引 | 所属用户 ID（逻辑关联 `users.id`） |
+| `token_hash` | String(64) | 否 | - | 唯一索引 | refresh token 的 SHA-256 哈希 |
+| `expires_at` | DateTime | 否 | - | 普通索引 | 过期时间（UTC） |
+| `revoked_at` | DateTime | 是 | `NULL` | 普通索引 | 吊销时间（UTC） |
+| `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
 
-| 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
-|--------|------|------|--------|--------|------|------|
-| `id` | Integer | - | 否 | 自增 | 主键 | 分组ID |
-| `name` | String | 100 | 否 | - | - | 分组名称 |
-| `sort_order` | Integer | - | 否 | 0 | - | 排序顺序 |
-| `created_at` | DateTime | - | 否 | CURRENT_TIMESTAMP | - | 创建时间 |
-
-#### 索引
-
-- **主键索引：** `id`
-
-#### 约束
-
-- `name` 不能为空
-- `sort_order` 用于前端显示排序，数值越小越靠前
-
-#### 关联关系
-
-- **一对多：** 一个分组可以包含多个频道 (`channels`)
-
-#### 示例查询
-
-```sql
--- 查询所有分组及频道数量
-SELECT
-    g.id,
-    g.name,
-    g.sort_order,
-    COUNT(c.id) as channel_count
-FROM channel_groups g
-LEFT JOIN channels c ON g.id = c.group_id
-GROUP BY g.id
-ORDER BY g.sort_order;
-
--- 查询空分组（没有频道的分组）
-SELECT * FROM channel_groups g
-WHERE NOT EXISTS (
-    SELECT 1 FROM channels c WHERE c.group_id = g.id
-);
-
--- 删除空分组
-DELETE FROM channel_groups
-WHERE id NOT IN (SELECT DISTINCT group_id FROM channels WHERE group_id IS NOT NULL);
-```
+关键说明：
+- 每次刷新会轮换 refresh token，旧令牌立即标记为 revoked。
+- 登出时可按 refresh token 定位并吊销对应记录。
 
 ---
 
-### 3. channels（频道表）
+### 3. `channel_groups`（频道分组表）
 
-频道信息表，存储 IPTV 直播源的详细信息。
+频道分组定义。
 
-#### 表结构
-
-| 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
-|--------|------|------|--------|--------|------|------|
-| `id` | Integer | - | 否 | 自增 | 主键 | 频道ID |
-| `name` | String | 200 | 否 | - | - | 频道名称 |
-| `url` | String | 500 | 否 | - | - | 直播源URL |
-| `logo` | String | 500 | 是 | NULL | - | 频道Logo URL |
-| `group_id` | Integer | - | 是 | NULL | 外键 | 所属分组ID |
-| `sort_order` | Integer | - | 否 | 0 | - | 排序顺序 |
-| `is_active` | Boolean | - | 否 | TRUE | - | 是否启用 |
-| `protocol` | String | 20 | 否 | 'http' | - | 协议类型 |
-| `tvg_id` | String | 100 | 是 | NULL | - | EPG节目单ID |
-| `last_check` | DateTime | - | 是 | NULL | - | 最后检测时间 |
-| `is_healthy` | Boolean | - | 否 | TRUE | - | 健康状态 |
-| `created_at` | DateTime | - | 否 | CURRENT_TIMESTAMP | - | 创建时间 |
-| `updated_at` | DateTime | - | 否 | CURRENT_TIMESTAMP | - | 更新时间 |
-
-#### 索引
-
-- **主键索引：** `id`
-- **外键索引：** `group_id` → `channel_groups.id`
-
-#### 约束
-
-- `name` 不能为空
-- `url` 不能为空
-- `protocol` 枚举值：`http`, `https`, `rtp`, `udp`
-- `group_id` 外键关联 `channel_groups.id`（级联更新，不级联删除）
-
-#### 字段说明
-
-**protocol（协议类型）：**
-- `http` - HTTP 直播源
-- `https` - HTTPS 直播源
-- `rtp` - RTP 组播源（如 `rtp://239.0.0.1:5000`）
-- `udp` - UDP 组播源（如 `udp://@239.0.0.1:5000`）
-
-**is_active（启用状态）：**
-- `TRUE` - 启用（出现在订阅列表中）
-- `FALSE` - 禁用（不出现在订阅列表中）
-
-**is_healthy（健康状态）：**
-- `TRUE` - 频道可用
-- `FALSE` - 频道不可用（最近一次检测失败）
-
-#### 关联关系
-
-- **多对一：** 多个频道属于一个分组 (`channel_groups`)
-- **一对多：** 一个频道可以有多条观看历史记录 (`watch_history`)
-
-#### 示例查询
-
-```sql
--- 查询所有启用的频道
-SELECT * FROM channels WHERE is_active = 1 ORDER BY sort_order;
-
--- 查询不健康的频道
-SELECT id, name, url, last_check
-FROM channels
-WHERE is_healthy = 0;
-
--- 按分组统计频道数量
-SELECT
-    g.name as group_name,
-    COUNT(c.id) as channel_count,
-    SUM(CASE WHEN c.is_active = 1 THEN 1 ELSE 0 END) as active_count,
-    SUM(CASE WHEN c.is_healthy = 1 THEN 1 ELSE 0 END) as healthy_count
-FROM channel_groups g
-LEFT JOIN channels c ON g.id = c.group_id
-GROUP BY g.id;
-
--- 查询组播源
-SELECT * FROM channels WHERE protocol IN ('rtp', 'udp');
-
--- 按协议统计
-SELECT protocol, COUNT(*) as count FROM channels GROUP BY protocol;
-
--- 查询最近更新的频道
-SELECT * FROM channels ORDER BY updated_at DESC LIMIT 10;
-```
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 分组 ID |
+| `name` | String(100) | 否 | - | - | 分组名称 |
+| `sort_order` | Integer | 否 | `0` | - | 排序值 |
+| `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
 
 ---
 
-### 4. watch_history（观看历史表）
+### 4. `channels`（频道表）
 
-用户观看历史记录表，用于统计观看时长和频道热度。
+IPTV 频道主数据。
 
-#### 表结构
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 频道 ID |
+| `name` | String(200) | 否 | - | - | 频道名称 |
+| `url` | String(500) | 否 | - | - | 播放源 URL |
+| `logo` | String(500) | 是 | `NULL` | - | Logo URL |
+| `group_id` | Integer | 是 | `NULL` | 普通索引 | 分组 ID（逻辑关联 `channel_groups.id`） |
+| `sort_order` | Integer | 否 | `0` | - | 排序值 |
+| `is_active` | Boolean | 否 | `true` | - | 是否启用 |
+| `protocol` | String(20) | 否 | `http` | - | 协议类型：`http/https/rtp/udp` |
+| `tvg_id` | String(100) | 是 | `NULL` | - | EPG 标识 |
+| `last_check` | DateTime | 是 | `NULL` | - | 最后健康检测时间（UTC） |
+| `is_healthy` | Boolean | 否 | `true` | - | 健康状态 |
+| `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
+| `updated_at` | DateTime | 否 | 应用写入 | - | 更新时间（UTC） |
 
-| 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
-|--------|------|------|--------|--------|------|------|
-| `id` | Integer | - | 否 | 自增 | 主键 | 记录ID |
-| `user_id` | Integer | - | 否 | - | 外键、索引 | 用户ID |
-| `channel_id` | Integer | - | 否 | - | 外键 | 频道ID |
-| `start_time` | DateTime | - | 否 | - | - | 开始观看时间 |
-| `end_time` | DateTime | - | 是 | NULL | - | 结束观看时间 |
-| `duration` | Integer | - | 否 | 0 | - | 观看时长（秒） |
-| `watch_date` | Date | - | 否 | - | 索引 | 观看日期 |
+---
 
-#### 索引
+### 5. `watch_history`（观看历史表）
 
-- **主键索引：** `id`
-- **外键索引：** `user_id` → `users.id`
-- **外键索引：** `channel_id` → `channels.id`
-- **普通索引：** `watch_date`
+记录观看会话的起止时间与时长。
 
-#### 约束
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 记录 ID |
+| `user_id` | Integer | 否 | - | 普通索引 | 用户 ID（逻辑关联 `users.id`） |
+| `channel_id` | Integer | 否 | - | 普通索引 | 频道 ID（逻辑关联 `channels.id`） |
+| `start_time` | DateTime | 否 | - | - | 开始时间（UTC） |
+| `end_time` | DateTime | 是 | `NULL` | - | 结束时间（UTC） |
+| `duration` | Integer | 否 | `0` | - | 时长（秒） |
+| `watch_date` | Date | 否 | - | 普通索引 | 观看日期（用于聚合） |
 
-- `user_id` 外键关联 `users.id`
-- `channel_id` 外键关联 `channels.id`
-- `duration` 单位为秒，通过 `end_time - start_time` 计算
+关键说明：
+- `duration < 5` 秒的记录会在结束阶段被自动忽略（删除）。
+- 活跃会话不再通过 `end_time IS NULL` 判断，统一看 `active_connections`。
 
-#### 数据更新机制
+---
 
-**自动保存机制（v1.1.0+）：**
+### 6. `active_connections`（活跃连接表）
 
-1. **观看开始（用户请求流代理）**
-   - 创建新的 `watch_history` 记录
-   - 设置 `start_time` = 当前时间
-   - 设置 `watch_date` = 开始日期
-   - `duration` 初始值 = 0
-   - `end_time` 初始值 = NULL
+保存当前正在播放的会话，供跨进程共享状态与心跳回收。
 
-2. **定时更新（每 WATCH_HISTORY_SAVE_INTERVAL 秒）**
-   - 触发观看记录更新（当连接仍活跃时）
-   - 更新 `end_time` = 当前时间
-   - 计算 `duration` = (end_time - start_time) 秒数
-   - 保存到数据库
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `connection_id` | String(64) | 否 | - | 主键 | 连接 ID（`user_channel_uuid`） |
+| `watch_history_id` | Integer | 否 | - | 唯一约束 | 对应 `watch_history.id` |
+| `user_id` | Integer | 否 | - | 普通索引 | 用户 ID |
+| `channel_id` | Integer | 否 | - | 普通索引 | 频道 ID |
+| `start_time` | DateTime | 否 | - | - | 会话开始时间（UTC） |
+| `last_heartbeat` | DateTime | 否 | - | 普通索引 | 最近心跳时间（UTC） |
+| `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
 
-3. **观看结束（连接断开）**
-   - 调用 `finish()` 方法
-   - 最后一次更新 `end_time` 和 `duration`
-   - 记录最终保存到数据库
+索引与约束：
+- `PRIMARY KEY (connection_id)`
+- `UNIQUE (watch_history_id)`（`uk_active_watch_history_id`）
+- `INDEX idx_active_user_id (user_id)`
+- `INDEX idx_active_channel_id (channel_id)`
+- `INDEX idx_active_last_heartbeat (last_heartbeat)`
+- `INDEX idx_active_user_channel (user_id, channel_id)`
 
-**配置项：**
-- `WATCH_HISTORY_SAVE_INTERVAL`: 自动保存间隔（秒），默认 60 秒
-- 配置位置：`backend/.env` 文件
-- 取值范围：30-300 秒
+---
 
-**优点：**
-- ✅ 实时统计观看数据
-- ✅ 防止服务器重启丢失数据
-- ✅ 准确记录观看时长
-- ✅ 支持断线重连场景
-- ✅ 可查询正在观看的用户（end_time 为 NULL）
+### 7. `settings`（系统设置表）
 
-**数据完整性：**
-- 观看时长 > 0 的记录才会在前端显示
-- 异常断开的连接会保留最后一次更新的数据
-- 短时间观看（<保存间隔）可能记录为 0 秒
+键值型配置表。
 
-#### 关联关系
+| 字段名 | 类型 | 允许空 | 默认值 | 索引 | 说明 |
+|---|---|---|---|---|---|
+| `id` | Integer | 否 | 自增 | 主键 | 设置 ID |
+| `key` | String(100) | 否 | - | 唯一索引 | 配置键 |
+| `value` | Text | 是 | `NULL` | - | 配置值 |
 
-- **多对一：** 多条观看历史属于一个用户 (`users`)
-- **多对一：** 多条观看历史对应一个频道 (`channels`)
+常见配置键（部分）：
+- `epg_url`
+- `server_name`
+- `site_name`
+- `watch_history_retention_days`
+- `proxy_buffer_size`
+- `health_check_timeout`
+- `health_check_max_retries`
+- `health_check_threads`
+- `udpxy_enabled`
+- `udpxy_url`
+- `heartbeat_interval_seconds`
+- `active_heartbeat_timeout_seconds`
+- `history_worker_interval_seconds`
 
-#### 示例查询
+---
 
+## 数据写入流程（观看相关）
+
+### 播放开始
+1. 写入一条 `watch_history`（`start_time`，`duration=0`）。
+2. 写入一条 `active_connections`（包含 `last_heartbeat`）。
+
+### 播放中
+1. 流代理按心跳间隔更新 `active_connections.last_heartbeat`。
+2. `history-worker` 定时刷新 `watch_history.duration`（不写 `end_time`）。
+
+### 播放结束/异常回收
+1. 会话关闭时补齐 `watch_history.end_time` 和最终 `duration`。
+2. 若时长 < 5 秒，删除该 `watch_history`。
+3. 删除对应 `active_connections`。
+
+---
+
+## 初始化与迁移
+
+### 自动初始化
+应用启动时会执行：
+- `db.create_all()`
+- （MySQL）自动移除历史版本遗留的外键约束
+- 兼容性补列：`users.must_change_password`（旧库缺失时自动 `ALTER TABLE`）
+- 创建默认管理员（若不存在）
+
+### 版本升级注意
+- 从旧版本升级后，`users` 表会新增 `must_change_password`。
+- 启用 JWT 刷新后会新增 `refresh_tokens` 表。
+- 活跃连接能力依赖 `active_connections` 表。
+
+---
+
+## 常用 SQL
+
+### 查看必须改密用户
 ```sql
--- 查询用户总观看时长（按天统计）
-SELECT
-    watch_date,
-    SUM(duration) as total_duration_seconds,
-    SUM(duration) / 3600.0 as total_duration_hours
-FROM watch_history
-WHERE user_id = 1
-GROUP BY watch_date
-ORDER BY watch_date DESC;
+SELECT id, username, must_change_password
+FROM users
+WHERE must_change_password = 1;
+```
 
--- 查询频道热度排行（最近7天）
+### 查看当前活跃连接（推荐）
+```sql
 SELECT
-    c.name as channel_name,
-    COUNT(w.id) as watch_count,
-    SUM(w.duration) as total_duration,
-    SUM(w.duration) / 3600.0 as total_hours
+  ac.connection_id,
+  u.username,
+  c.name AS channel_name,
+  ac.start_time,
+  ac.last_heartbeat
+FROM active_connections ac
+LEFT JOIN users u ON ac.user_id = u.id
+LEFT JOIN channels c ON ac.channel_id = c.id
+ORDER BY ac.start_time DESC;
+```
+
+### 查看近 7 天频道观看排行
+```sql
+SELECT
+  c.name AS channel_name,
+  COUNT(w.id) AS watch_count,
+  SUM(w.duration) AS total_duration
 FROM watch_history w
 JOIN channels c ON w.channel_id = c.id
 WHERE w.watch_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-GROUP BY w.channel_id
+GROUP BY w.channel_id, c.name
 ORDER BY total_duration DESC
 LIMIT 10;
-
--- 查询正在观看的用户（end_time 为空）
-SELECT
-    u.username,
-    c.name as channel_name,
-    w.start_time,
-    TIMESTAMPDIFF(SECOND, w.start_time, NOW()) as watching_seconds
-FROM watch_history w
-JOIN users u ON w.user_id = u.id
-JOIN channels c ON w.channel_id = c.id
-WHERE w.end_time IS NULL;
-
--- 按日期统计观看次数和时长
-SELECT
-    watch_date,
-    COUNT(*) as watch_count,
-    SUM(duration) / 60 as total_minutes
-FROM watch_history
-GROUP BY watch_date
-ORDER BY watch_date DESC;
-
--- 查询观看时长超过1小时的记录
-SELECT
-    u.username,
-    c.name,
-    start_time,
-    duration / 60 as duration_minutes
-FROM watch_history w
-JOIN users u ON w.user_id = u.id
-JOIN channels c ON w.channel_id = c.id
-WHERE duration > 3600
-ORDER BY duration DESC;
 ```
 
----
-
-### 5. settings（系统设置表）
-
-键值对形式的系统配置表。
-
-#### 表结构
-
-| 字段名 | 类型 | 长度 | 允许空 | 默认值 | 索引 | 说明 |
-|--------|------|------|--------|--------|------|------|
-| `id` | Integer | - | 否 | 自增 | 主键 | 设置ID |
-| `key` | String | 100 | 否 | - | 唯一索引 | 设置键 |
-| `value` | Text | - | 是 | NULL | - | 设置值 |
-
-#### 索引
-
-- **主键索引：** `id`
-- **唯一索引：** `key`
-
-#### 约束
-
-- `key` 必须唯一
-- `value` 存储为文本，支持长内容
-
-#### 预定义配置键
-
-| 配置键 | 说明 | 示例值 | Web 配置 |
-|--------|------|--------|---------|
-| `epg_url` | EPG 节目单 XML 地址 | `http://epg.example.com/guide.xml` | ❌ 否 |
-| `server_name` | 服务器名称 | `IPTV Proxy Server` | ❌ 否 |
-| `site_name` | 网站名称 | `我的IPTV` | ✅ 是 |
-| `health_check_interval` | 健康检测间隔（秒） | `1800` | ❌ 否 |
-| `watch_history_retention_days` | 观看历史保留天数 | `30` | ❌ 否 |
-| `proxy_buffer_size` | 代理缓冲区大小（字节） | `8192` | ✅ 是 |
-| `health_check_timeout` | 健康检测超时时间（秒） | `10` | ✅ 是 |
-| `health_check_max_retries` | 健康检测重试次数 | `1` | ✅ 是 |
-| `health_check_threads` | 健康检测线程数 | `3` | ✅ 是 |
-| `udpxy_enabled` | 是否启用 UDPxy | `true` / `false` | ✅ 是 |
-| `udpxy_url` | UDPxy 服务地址 | `http://localhost:3680` | ✅ 是 |
-
-**说明：**
-- ✅ **可在 Web 界面配置**：系统设置页面可直接修改，立即生效
-- ❌ **不可在 Web 界面配置**：需通过数据库或配置文件修改
-
-#### 示例查询
-
+### 清理过期且已吊销的 refresh token
 ```sql
--- 查询所有设置
-SELECT * FROM settings;
-
--- 查询指定配置
-SELECT value FROM settings WHERE key = 'epg_url';
-
--- 更新配置
-INSERT INTO settings (key, value) VALUES ('site_name', '我的IPTV')
-ON DUPLICATE KEY UPDATE value = '我的IPTV';
-
--- 删除配置
-DELETE FROM settings WHERE key = 'old_config';
+DELETE FROM refresh_tokens
+WHERE revoked_at IS NOT NULL
+   OR expires_at < NOW();
 ```
 
 ---
 
-## 数据库初始化
+## 备份与恢复
 
-### SQLite 初始化
-
+### SQLite 备份
 ```bash
-cd backend
-source venv/bin/activate
-
-python << EOF
-from app import create_app, db
-from app.models.user import User
-
-app = create_app()
-with app.app_context():
-    db.create_all()
-
-    # 创建默认管理员
-    if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin')
-        admin.set_password('admin123')
-        admin.generate_token()
-        db.session.add(admin)
-        db.session.commit()
-        print('Database initialized successfully')
-EOF
-```
-
-### MySQL 初始化
-
-```sql
--- 1. 创建数据库
-CREATE DATABASE iptv_production CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- 2. 创建用户
-CREATE USER 'iptv_user'@'localhost' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON iptv_production.* TO 'iptv_user'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-然后执行 Python 初始化脚本（同上）。
-
----
-
-## 数据库维护
-
-### 备份
-
-**SQLite 备份：**
-
-```bash
-# 在线备份
 sqlite3 backend/data/iptv.db ".backup 'backup_$(date +%Y%m%d).db'"
-
-# 压缩备份
-sqlite3 backend/data/iptv.db ".backup '/tmp/backup.db'" && gzip /tmp/backup.db
 ```
 
-**MySQL 备份：**
-
+### MySQL 备份
 ```bash
-# 导出数据库
 mysqldump -u iptv_user -p iptv_production > backup_$(date +%Y%m%d).sql
-
-# 压缩备份
-mysqldump -u iptv_user -p iptv_production | gzip > backup_$(date +%Y%m%d).sql.gz
-```
-
-### 恢复
-
-**SQLite 恢复：**
-
-```bash
-# 恢复备份
-cp backup_20260129.db backend/data/iptv.db
-```
-
-**MySQL 恢复：**
-
-```bash
-# 恢复数据库
-mysql -u iptv_user -p iptv_production < backup_20260129.sql
-```
-
-### 优化
-
-**SQLite 优化：**
-
-```sql
--- 清理碎片
-VACUUM;
-
--- 分析查询计划
-ANALYZE;
-```
-
-**MySQL 优化：**
-
-```sql
--- 优化表
-OPTIMIZE TABLE channels, watch_history, users;
-
--- 分析表
-ANALYZE TABLE channels, watch_history;
-
--- 查看表状态
-SHOW TABLE STATUS WHERE Name IN ('channels', 'watch_history');
-```
-
-### 清理数据
-
-**通过 Web 界面清理（推荐）：**
-
-在"系统设置 > 观看历史管理"页面中：
-1. 配置保留天数（7/14/30天）
-2. 查看统计信息（总记录数、最早/最新记录）
-3. 点击"清空全部数据"按钮手动清理所有记录
-
-**通过 SQL 手动清理：**
-
-```sql
--- 删除 30 天前的观看历史
-DELETE FROM watch_history WHERE watch_date < DATE_SUB(CURDATE(), INTERVAL 30 DAY);
-
--- 清空所有观看历史（等同于 Web 界面的清空操作）
-DELETE FROM watch_history;
-
--- 删除未使用的分组
-DELETE FROM channel_groups
-WHERE id NOT IN (SELECT DISTINCT group_id FROM channels WHERE group_id IS NOT NULL);
-
--- 清理孤立的观看记录（频道已删除）
-DELETE FROM watch_history
-WHERE channel_id NOT IN (SELECT id FROM channels);
-
--- 删除观看时长为 0 的无效记录
-DELETE FROM watch_history WHERE duration = 0;
-```
-
-**注意：** 观看历史数据一旦删除无法恢复，建议操作前先备份数据库。
-
----
-
-## 常用 SQL 查询
-
-### 统计查询
-
-```sql
--- 系统概览统计
-SELECT
-    (SELECT COUNT(*) FROM users) as total_users,
-    (SELECT COUNT(*) FROM channels) as total_channels,
-    (SELECT COUNT(*) FROM channels WHERE is_active = 1) as active_channels,
-    (SELECT COUNT(*) FROM channels WHERE is_healthy = 0) as unhealthy_channels,
-    (SELECT COUNT(*) FROM channel_groups) as total_groups,
-    (SELECT COUNT(*) FROM watch_history) as total_watch_records;
-
--- 今日观看统计
-SELECT
-    COUNT(DISTINCT user_id) as active_users,
-    COUNT(*) as watch_count,
-    SUM(duration) / 3600 as total_hours
-FROM watch_history
-WHERE watch_date = CURDATE();
-
--- 频道协议分布
-SELECT protocol, COUNT(*) as count
-FROM channels
-GROUP BY protocol;
-```
-
-### 性能查询
-
-```sql
--- 查询慢查询（需要开启慢查询日志）
--- 查看最常访问的频道
-SELECT
-    c.id,
-    c.name,
-    COUNT(w.id) as access_count,
-    MAX(w.start_time) as last_access
-FROM channels c
-LEFT JOIN watch_history w ON c.id = w.channel_id
-GROUP BY c.id
-ORDER BY access_count DESC
-LIMIT 20;
-
--- 查询从未被观看的频道
-SELECT c.* FROM channels c
-WHERE NOT EXISTS (
-    SELECT 1 FROM watch_history w WHERE w.channel_id = c.id
-);
-```
-
----
-
-## 故障排查
-
-### 数据库连接问题
-
-```bash
-# 检查 SQLite 文件权限
-ls -la backend/data/iptv.db
-
-# 检查 MySQL 连接
-mysql -u iptv_user -p iptv_production -e "SELECT 1"
-
-# 查看错误日志
-tail -f /var/log/mysql/error.log  # MySQL
-```
-
-### 数据一致性检查
-
-```sql
--- 检查孤立的频道（分组已删除）
-SELECT c.* FROM channels c
-LEFT JOIN channel_groups g ON c.group_id = g.id
-WHERE c.group_id IS NOT NULL AND g.id IS NULL;
-
--- 检查孤立的观看记录
-SELECT w.* FROM watch_history w
-LEFT JOIN channels c ON w.channel_id = c.id
-WHERE c.id IS NULL;
 ```
 
 ---
 
 ## 总结
 
-IPTV Proxy Admin 的数据库设计简洁高效，包含 5 张核心表：
+当前数据库核心对象为 7 张表：
 
-1. **users** - 用户管理
-2. **channel_groups** - 频道分组
-3. **channels** - 频道信息
-4. **watch_history** - 观看历史
-5. **settings** - 系统配置
+1. `users`（用户）
+2. `refresh_tokens`（JWT 刷新令牌）
+3. `channel_groups`（频道分组）
+4. `channels`（频道）
+5. `watch_history`（历史）
+6. `active_connections`（活跃连接）
+7. `settings`（系统配置）
 
-所有表之间通过外键关联，保证数据一致性。支持 SQLite 和 MySQL 两种数据库。
+如有新增模型字段或新表，需同步更新本文件，避免文档与实际结构偏差。

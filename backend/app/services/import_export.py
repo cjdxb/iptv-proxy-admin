@@ -7,8 +7,11 @@ import re
 import requests
 from flask import Blueprint, request, jsonify, Response
 from loguru import logger
+from sqlalchemy import func, inspect
 from app import db
-from app.models.channel import Channel, ChannelGroup
+from app.models.channel import Channel
+from app.models.channel_group import ChannelGroup
+from app.models.watch_history import WatchHistory
 from app.utils.auth import login_required
 
 bp = Blueprint('import_export', __name__, url_prefix='/api/import-export')
@@ -121,16 +124,52 @@ def get_or_create_group(group_name):
 
 def save_imported_channels(channels, overwrite, auto_create_group, include_regex=None, exclude_regex=None):
     """保存导入的频道"""
+    preserved_channels_count = 0
+
     if overwrite:
-        # 清空现有频道
-        Channel.query.delete()
-        ChannelGroup.query.delete()
+        # 覆盖导入时，保留被历史记录/活跃连接引用的频道，避免误删仍在使用的数据
+        protected_channel_ids = {
+            row[0] for row in db.session.query(WatchHistory.channel_id).distinct().all()
+        }
+
+        # 若存在 active_connections 表，也将活跃连接中的频道加入保护集合
+        table_names = set(inspect(db.engine).get_table_names())
+        if 'active_connections' in table_names:
+            from app.models.active_connection import ActiveConnection
+            protected_channel_ids.update(
+                row[0] for row in db.session.query(ActiveConnection.channel_id).distinct().all()
+            )
+
+        if protected_channel_ids:
+            preserved_channels_count = Channel.query.filter(Channel.id.in_(protected_channel_ids)).count()
+
+            # 保留频道：禁用、脱离分组，并将排序移到末尾，避免干扰新导入频道顺序
+            Channel.query.filter(Channel.id.in_(protected_channel_ids)).update(
+                {
+                    Channel.is_active: False,
+                    Channel.group_id: None,
+                    Channel.sort_order: Channel.id + 1000000000
+                },
+                synchronize_session=False
+            )
+
+            # 删除其余无引用频道
+            Channel.query.filter(~Channel.id.in_(protected_channel_ids)).delete(synchronize_session=False)
+        else:
+            # 无引用时可直接全删
+            Channel.query.delete(synchronize_session=False)
+
+        # 所有频道已脱离分组后，分组可安全清空
+        ChannelGroup.query.delete(synchronize_session=False)
         db.session.commit()
     
     imported_count = 0
     skipped_groups = set()
     skipped_invalid_urls = 0
     skipped_filtered = 0
+    # 新导入频道排序按源顺序分配；基于当前“已启用频道”末尾追加
+    max_sort_order = db.session.query(func.max(Channel.sort_order)).filter(Channel.is_active == True).scalar()
+    base_sort_order = max_sort_order if max_sort_order is not None else -1
     
     # 预编译正则
     inc_pattern = None
@@ -186,7 +225,7 @@ def save_imported_channels(channels, overwrite, auto_create_group, include_regex
             logo=ch_data.get('logo', ''),
             tvg_id=ch_data.get('tvg_id', ''),
             group_id=group.id if group else None,
-            sort_order=imported_count
+            sort_order=base_sort_order + imported_count + 1
         )
         channel.detect_protocol()
         
@@ -210,6 +249,9 @@ def save_imported_channels(channels, overwrite, auto_create_group, include_regex
         
     if skipped_filtered > 0:
         msg_parts.append(f'过滤 {skipped_filtered} 个频道')
+
+    if preserved_channels_count > 0:
+        msg_parts.append(f'保留 {preserved_channels_count} 个历史关联频道（已自动禁用）')
         
     if msg_parts:
         result['message'] += '，' + '，'.join(msg_parts)
@@ -259,9 +301,13 @@ def import_channels():
     include_regex = data.get('include_regex', '').strip()
     exclude_regex = data.get('exclude_regex', '').strip()
     
-    result = save_imported_channels(channels, overwrite, auto_create_group, include_regex, exclude_regex)
-    
-    return jsonify(result)
+    try:
+        result = save_imported_channels(channels, overwrite, auto_create_group, include_regex, exclude_regex)
+        return jsonify(result)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"导入频道失败: {e}")
+        return jsonify({'error': f'导入失败: {str(e)}'}), 500
 
 
 @bp.route('/import-url', methods=['POST'])
@@ -327,9 +373,13 @@ def import_from_url():
     include_regex = data.get('include_regex', '').strip()
     exclude_regex = data.get('exclude_regex', '').strip()
     
-    result = save_imported_channels(channels, overwrite, auto_create_group, include_regex, exclude_regex)
-    
-    return jsonify(result)
+    try:
+        result = save_imported_channels(channels, overwrite, auto_create_group, include_regex, exclude_regex)
+        return jsonify(result)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"URL 导入频道失败: {e}")
+        return jsonify({'error': f'导入失败: {str(e)}'}), 500
 
 @bp.route('/export', methods=['GET'])
 @login_required

@@ -5,7 +5,7 @@
 
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models.channel import ChannelGroup
+from app.models.channel_group import ChannelGroup
 from app.utils.auth import login_required
 
 bp = Blueprint('groups', __name__, url_prefix='/api/groups')
@@ -143,4 +143,3 @@ def delete_empty_groups():
         'message': f'成功删除 {deleted_count} 个空分组',
         'deleted': deleted_count
     })
-

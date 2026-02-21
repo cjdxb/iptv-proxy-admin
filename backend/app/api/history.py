@@ -4,39 +4,48 @@
 """
 
 from flask import Blueprint, request, jsonify
-from datetime import datetime, timedelta
 from loguru import logger
 from sqlalchemy import func, select
 from app import db
 from app.models.watch_history import WatchHistory
 from app.models.settings import Settings
 from app.utils.auth import login_required
+from app.utils.datetime_utils import to_iso8601_utc, to_iso8601_date
 
 bp = Blueprint('history', __name__, url_prefix='/api/history')
+MIN_HISTORY_DURATION_SECONDS = WatchHistory.MIN_VALID_DURATION_SECONDS
 
 
 @bp.route('/cleanup', methods=['POST'])
 @login_required
 def cleanup_history():
     """
-    清空所有观看历史
+    清空已结束的观看历史
     """
     try:
-        # 查询要删除的记录数量（使用 SQLAlchemy 2.0 兼容的方式）
-        count_before = db.session.scalar(select(func.count()).select_from(WatchHistory))
+        ended_filter = WatchHistory.end_time.isnot(None)
 
-        # 删除所有记录
-        deleted_count = WatchHistory.query.delete()
+        # 查询要删除的记录数量（仅已结束记录）
+        count_before = db.session.scalar(
+            select(func.count()).select_from(WatchHistory).where(ended_filter)
+        )
+
+        # 仅删除已结束记录
+        deleted_count = WatchHistory.query.filter(ended_filter).delete(synchronize_session=False)
 
         db.session.commit()
 
-        logger.info(f"手动清空观看历史: 删除了 {deleted_count} 条记录")
+        count_after = db.session.scalar(
+            select(func.count()).select_from(WatchHistory).where(ended_filter)
+        )
+
+        logger.info(f"手动清空观看历史: 删除了 {deleted_count} 条已结束记录")
 
         return jsonify({
-            'message': f'成功清空 {deleted_count} 条观看历史记录',
+            'message': f'成功清空 {deleted_count} 条已结束观看历史记录',
             'deleted_count': deleted_count,
             'count_before': count_before,
-            'count_after': 0
+            'count_after': count_after
         })
 
     except Exception as e:
@@ -50,16 +59,17 @@ def cleanup_history():
 def get_history_list():
     """
     获取历史连接列表
-    只显示观看时长 > 0 的记录
+    只显示已结束且观看时长 >= 5 秒的记录
     """
     try:
         # 获取分页参数
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
 
-        # 查询观看时长 > 0 的记录
+        # 查询已结束且观看时长 >= 5 秒的记录
         query = WatchHistory.query.filter(
-            WatchHistory.duration > 0
+            WatchHistory.end_time.isnot(None),
+            WatchHistory.duration >= MIN_HISTORY_DURATION_SECONDS
         ).order_by(WatchHistory.start_time.desc())
 
         # 分页
@@ -78,10 +88,10 @@ def get_history_list():
                 'username': record.user.username if record.user else '未知用户',
                 'channel_id': record.channel_id,
                 'channel_name': record.channel.name if record.channel else '已删除频道',
-                'start_time': record.start_time.isoformat() + 'Z' if record.start_time else None,
-                'end_time': record.end_time.isoformat() + 'Z' if record.end_time else None,
+                'start_time': to_iso8601_utc(record.start_time),
+                'end_time': to_iso8601_utc(record.end_time),
                 'duration': record.duration,
-                'watch_date': record.watch_date.isoformat() if record.watch_date else None
+                'watch_date': to_iso8601_date(record.watch_date)
             }
             items.append(item)
 
@@ -120,8 +130,8 @@ def get_history_stats():
 
         return jsonify({
             'total_count': total_count,
-            'earliest_date': earliest_record.isoformat() + 'Z' if earliest_record else None,
-            'latest_date': latest_record.isoformat() + 'Z' if latest_record else None
+            'earliest_date': to_iso8601_utc(earliest_record),
+            'latest_date': to_iso8601_utc(latest_record)
         })
 
     except Exception as e:

@@ -1552,7 +1552,7 @@ SELECT
 FROM watch_history w
 JOIN users u ON w.user_id = u.id
 JOIN channels c ON w.channel_id = c.id
-WHERE w.duration > 0  -- 只显示有观看时长的记录
+WHERE w.duration >= 5  -- 只显示有效观看记录（至少5秒）
 ORDER BY w.start_time DESC
 LIMIT 20 OFFSET 0
 ```
@@ -2162,8 +2162,8 @@ UDPxy 是一个组播到HTTP的转换代理。
       │   watch_history        │
       │────────────────────────│
       │ id (PK)                │
-      │ user_id (FK)           │
-      │ channel_id (FK)  ──────┼───┐
+      │ user_id (INDEX)        │
+      │ channel_id (INDEX) ────┼───┐
       │ start_time             │   │
       │ end_time               │   │ n
       │ duration               │   │
@@ -2178,7 +2178,7 @@ UDPxy 是一个组播到HTTP的转换代理。
                        │ name                 │
                        │ url                  │
                        │ logo                 │
-                       │ group_id (FK)  ──────┼───┐
+                       │ group_id (INDEX) ────┼───┐
                        │ sort_order           │   │
                        │ is_active            │   │ n
                        │ protocol             │   │
@@ -2268,7 +2268,7 @@ UDPxy 是一个组播到HTTP的转换代理。
 | `name` | String | 200 | NOT NULL | - | 频道名称 |
 | `url` | String | 500 | NOT NULL | - | 直播流地址 |
 | `logo` | String | 500 | | NULL | Logo图片URL |
-| `group_id` | Integer | - | FK | NULL | 所属分组ID |
+| `group_id` | Integer | - | INDEX | NULL | 所属分组ID（逻辑关联 `channel_groups.id`） |
 | `sort_order` | Integer | - | NOT NULL | 0 | 排序值 |
 | `is_active` | Boolean | - | NOT NULL | TRUE | 是否启用 |
 | `protocol` | String | 20 | NOT NULL | 'http' | 协议类型 |
@@ -2280,7 +2280,7 @@ UDPxy 是一个组播到HTTP的转换代理。
 
 **索引**:
 - PRIMARY KEY: `id`
-- FOREIGN KEY: `group_id` → `channel_groups(id)`
+- INDEX: `group_id`
 - INDEX: `protocol`
 - INDEX: `is_active`
 - INDEX: `is_healthy`
@@ -2303,8 +2303,8 @@ UDPxy 是一个组播到HTTP的转换代理。
 | 字段名 | 数据类型 | 长度 | 约束 | 默认值 | 说明 |
 |-------|---------|------|------|--------|------|
 | `id` | Integer | - | PK, AUTO_INCREMENT | - | 记录ID |
-| `user_id` | Integer | - | FK, NOT NULL | - | 用户ID |
-| `channel_id` | Integer | - | FK, NOT NULL | - | 频道ID |
+| `user_id` | Integer | - | NOT NULL, INDEX | - | 用户ID（逻辑关联 `users.id`） |
+| `channel_id` | Integer | - | NOT NULL, INDEX | - | 频道ID（逻辑关联 `channels.id`） |
 | `start_time` | DateTime | - | NOT NULL | - | 开始观看时间 |
 | `end_time` | DateTime | - | | NULL | 结束观看时间 |
 | `duration` | Integer | - | NOT NULL | 0 | 观看时长（秒） |
@@ -2312,8 +2312,8 @@ UDPxy 是一个组播到HTTP的转换代理。
 
 **索引**:
 - PRIMARY KEY: `id`
-- FOREIGN KEY: `user_id` → `users(id)`
-- FOREIGN KEY: `channel_id` → `channels(id)`
+- INDEX: `user_id`
+- INDEX: `channel_id`
 - INDEX: `watch_date`
 - INDEX: `(user_id, watch_date)` （组合索引）
 - INDEX: `(channel_id, watch_date)` （组合索引）
@@ -2322,7 +2322,7 @@ UDPxy 是一个组播到HTTP的转换代理。
 - 连接建立时创建记录
 - 每60秒更新一次duration
 - 连接断开时更新end_time
-- 只显示duration > 0的记录
+- 只显示duration >= 5的记录
 - watch_date从start_time提取
 
 #### 2.5 settings（系统设置表）

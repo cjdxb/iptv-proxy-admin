@@ -122,8 +122,8 @@ SERVER_DEBUG=false
 DATABASE_TYPE=sqlite
 DATABASE_PATH=data/iptv.db
 
-# Session 密钥（必须修改！）
-SESSION_SECRET_KEY=$(openssl rand -base64 32)
+# JWT 密钥（必须修改！）
+JWT_SECRET_KEY=$(openssl rand -base64 32)
 
 # UDPxy 配置（如果需要组播转换）
 UDPXY_ENABLED=false
@@ -146,7 +146,7 @@ WATCH_HISTORY_SAVE_INTERVAL=60
 # - PROXY_BUFFER_SIZE
 ```
 
-**重要：** 必须修改 `SESSION_SECRET_KEY`，使用 `openssl rand -base64 32` 生成强密钥。
+**重要：** 必须修改 `JWT_SECRET_KEY`，使用 `openssl rand -base64 32` 生成强密钥。
 
 ### 4. 初始化数据库
 
@@ -507,7 +507,7 @@ sudo systemctl restart nginx               # 重启
 
 ### 基础配置
 - [ ] 修改默认管理员密码（admin/admin123）
-- [ ] 生成并配置 SESSION_SECRET_KEY
+- [ ] 生成并配置 JWT_SECRET_KEY
 - [ ] 配置正确的域名
 
 ### 服务配置

@@ -120,8 +120,13 @@ async function handleLogin() {
     
     try {
       await authStore.login(form.username, form.password)
-      ElMessage.success('登录成功 🎉')
-      router.push('/')
+      if (authStore.mustChangePassword) {
+        ElMessage.warning('首次登录请先修改密码')
+        router.push('/account')
+      } else {
+        ElMessage.success('登录成功 🎉')
+        router.push('/')
+      }
     } catch (error) {
       ElMessage.error(error.response?.data?.error || '登录失败')
     } finally {

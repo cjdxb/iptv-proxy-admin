@@ -75,7 +75,7 @@
                   检测连接
                 </el-button>
               </div>
-              <div class="form-item-tip">UDPxy 代理服务器地址，例如：http://192.168.1.1:4022</div>
+              <div class="form-item-tip">UDPxy 代理服务器地址，例如：http://192.168.1.1:4022（容器部署可尝试 host.docker.internal）</div>
             </div>
           </el-form-item>
 
@@ -185,51 +185,74 @@
         </el-form>
       </el-card>
 
-      <!-- 账户设置 -->
+      <!-- 观看会话配置 -->
       <el-card class="settings-card">
         <template #header>
           <div class="card-header">
-            <span>👤 账户设置</span>
+            <span>🧭 观看会话配置</span>
           </div>
         </template>
         <el-form label-width="140px" label-position="left">
-          <div class="sub-section-title">用户名</div>
-
-          <el-form-item label="当前用户">
+          <el-form-item label="心跳间隔">
             <div class="form-item-content">
-              <el-input v-model="usernameForm.username" :placeholder="authStore.user?.username" />
-              <div class="form-item-tip">当前用户名：{{ authStore.user?.username }}，用户名长度不能少于3位</div>
+              <div class="input-with-unit">
+                <el-input-number
+                  v-model="settings.heartbeat_interval_seconds"
+                  :min="1"
+                  :max="300"
+                  :step="1"
+                />
+                <span class="unit-text">秒</span>
+              </div>
+              <div class="form-item-tip">播放器连接存活心跳上报间隔，推荐值：5-15秒</div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="心跳超时阈值">
+            <div class="form-item-content">
+              <div class="input-with-unit">
+                <el-input-number
+                  v-model="settings.active_heartbeat_timeout_seconds"
+                  :min="1"
+                  :max="600"
+                  :step="1"
+                />
+                <span class="unit-text">秒</span>
+              </div>
+              <div class="form-item-tip">超过此阈值未收到心跳将回收为僵尸连接，需大于心跳间隔</div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="Worker 扫描间隔">
+            <div class="form-item-content">
+              <div class="input-with-unit">
+                <el-input-number
+                  v-model="settings.history_worker_interval_seconds"
+                  :min="1"
+                  :max="300"
+                  :step="1"
+                />
+                <span class="unit-text">秒</span>
+              </div>
+              <div class="form-item-tip">history-worker 定时保存与僵尸回收周期</div>
             </div>
           </el-form-item>
 
           <el-form-item label=" ">
-            <el-button type="primary" @click="changeUsername" :loading="changingUsername">
-              修改用户名
+            <el-button type="primary" @click="saveWatchSessionConfig" :loading="savingWatchSession">
+              保存并应用
             </el-button>
           </el-form-item>
 
-          <div class="sub-section-title">密码</div>
-
-          <el-form-item label="原密码">
-            <el-input v-model="passwordForm.oldPassword" type="password" show-password />
-          </el-form-item>
-
-          <el-form-item label="新密码">
-            <el-input v-model="passwordForm.newPassword" type="password" show-password />
-          </el-form-item>
-
-          <el-form-item label="确认密码">
-            <div class="form-item-content">
-              <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
-              <div class="form-item-tip">新密码长度不能少于6位</div>
-            </div>
-          </el-form-item>
-
-          <el-form-item label=" ">
-            <el-button type="primary" @click="changePassword" :loading="changingPassword">
-              修改密码
-            </el-button>
-          </el-form-item>
+          <el-alert
+            type="warning"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              💡 心跳间隔与超时阈值可立即生效；Worker 扫描间隔需重启 history-worker 生效
+            </template>
+          </el-alert>
         </el-form>
       </el-card>
 
@@ -312,24 +335,22 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import api from '@/api'
 import { formatDate } from '@/utils/datetime'
 
-const authStore = useAuthStore()
 const siteStore = useSiteStore()
 
 const loading = ref(false)
 const savingBasic = ref(false)
 const savingStreaming = ref(false)
 const savingHealthCheck = ref(false)
-const changingPassword = ref(false)
-const changingUsername = ref(false)
+const savingWatchSession = ref(false)
 const savingRetention = ref(false)
 const cleaning = ref(false)
 const loadingStats = ref(false)
 const testingUdpxy = ref(false)
+const loadedHistoryWorkerInterval = ref(15)
 
 const settings = reactive({
   epg_url: '',
@@ -340,20 +361,13 @@ const settings = reactive({
   health_check_max_retries: 1,
   health_check_threads: 3,
   udpxy_enabled: false,
-  udpxy_url: 'http://localhost:3680'
+  udpxy_url: 'http://localhost:3680',
+  heartbeat_interval_seconds: 10,
+  active_heartbeat_timeout_seconds: 45,
+  history_worker_interval_seconds: 15
 })
 
 const historyStats = ref(null)
-
-const usernameForm = reactive({
-  username: ''
-})
-
-const passwordForm = reactive({
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-})
 
 async function fetchSettings() {
   loading.value = true
@@ -403,7 +417,25 @@ async function fetchSettings() {
     if (!settings.udpxy_url) {
       settings.udpxy_url = 'http://localhost:3680'
     }
-    usernameForm.username = authStore.user?.username || ''
+
+    // 设置观看会话参数默认值
+    if (settings.heartbeat_interval_seconds) {
+      settings.heartbeat_interval_seconds = parseInt(settings.heartbeat_interval_seconds)
+    } else {
+      settings.heartbeat_interval_seconds = 10
+    }
+    if (settings.active_heartbeat_timeout_seconds) {
+      settings.active_heartbeat_timeout_seconds = parseInt(settings.active_heartbeat_timeout_seconds)
+    } else {
+      settings.active_heartbeat_timeout_seconds = 45
+    }
+    if (settings.history_worker_interval_seconds) {
+      settings.history_worker_interval_seconds = parseInt(settings.history_worker_interval_seconds)
+    } else {
+      settings.history_worker_interval_seconds = 15
+    }
+    loadedHistoryWorkerInterval.value = settings.history_worker_interval_seconds
+
     // 同时获取历史统计
     await fetchHistoryStats()
   } catch (error) {
@@ -514,62 +546,49 @@ async function saveHealthCheckConfig() {
   }
 }
 
-async function changeUsername() {
-  const newUsername = usernameForm.username
-  if (!newUsername) {
-    ElMessage.warning('用户名不能为空')
+// 保存观看会话配置
+async function saveWatchSessionConfig() {
+  if (!settings.heartbeat_interval_seconds || settings.heartbeat_interval_seconds < 1 || settings.heartbeat_interval_seconds > 300) {
+    ElMessage.warning('心跳间隔必须在 1-300 秒之间')
     return
   }
 
-  if (newUsername.length < 3) {
-    ElMessage.warning('用户名长度不能少于3位')
+  if (!settings.active_heartbeat_timeout_seconds || settings.active_heartbeat_timeout_seconds < 1 || settings.active_heartbeat_timeout_seconds > 600) {
+    ElMessage.warning('心跳超时阈值必须在 1-600 秒之间')
     return
   }
 
-  if (newUsername === authStore.user?.username) {
-    ElMessage.info('用户名未变更')
+  if (settings.active_heartbeat_timeout_seconds <= settings.heartbeat_interval_seconds) {
+    ElMessage.warning('心跳超时阈值必须大于心跳间隔')
     return
   }
 
-  changingUsername.value = true
+  if (!settings.history_worker_interval_seconds || settings.history_worker_interval_seconds < 1 || settings.history_worker_interval_seconds > 300) {
+    ElMessage.warning('Worker 扫描间隔必须在 1-300 秒之间')
+    return
+  }
+
+  const workerIntervalChanged = settings.history_worker_interval_seconds !== loadedHistoryWorkerInterval.value
+
+  savingWatchSession.value = true
   try {
-    const response = await api.auth.changeUsername(newUsername)
-    ElMessage.success('用户名修改成功')
-    authStore.user.username = response.data.username
+    await api.settings.updateOne('heartbeat_interval_seconds', settings.heartbeat_interval_seconds)
+    await api.settings.updateOne('active_heartbeat_timeout_seconds', settings.active_heartbeat_timeout_seconds)
+    await api.settings.updateOne('history_worker_interval_seconds', settings.history_worker_interval_seconds)
+    await api.settings.reload()
+
+    loadedHistoryWorkerInterval.value = settings.history_worker_interval_seconds
+
+    if (workerIntervalChanged) {
+      ElMessage.success('观看会话配置已保存，心跳参数已立即生效')
+      ElMessage.warning('history-worker 扫描间隔需重启 history-worker 后生效')
+    } else {
+      ElMessage.success('观看会话配置已保存并应用')
+    }
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || '修改失败')
+    ElMessage.error('保存失败')
   } finally {
-    changingUsername.value = false
-  }
-}
-
-async function changePassword() {
-  if (!passwordForm.oldPassword || !passwordForm.newPassword) {
-    ElMessage.warning('请填写原密码和新密码')
-    return
-  }
-
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning('两次输入的密码不一致')
-    return
-  }
-
-  if (passwordForm.newPassword.length < 6) {
-    ElMessage.warning('新密码长度不能少于6位')
-    return
-  }
-
-  changingPassword.value = true
-  try {
-    await api.auth.changePassword(passwordForm.oldPassword, passwordForm.newPassword)
-    ElMessage.success('密码修改成功')
-    passwordForm.oldPassword = ''
-    passwordForm.newPassword = ''
-    passwordForm.confirmPassword = ''
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || '密码修改失败')
-  } finally {
-    changingPassword.value = false
+    savingWatchSession.value = false
   }
 }
 

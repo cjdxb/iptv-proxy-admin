@@ -189,6 +189,7 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import api from '@/api'
+import { formatDate } from '@/utils/datetime'
 
 // 注册 ECharts 组件
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
@@ -228,10 +229,7 @@ const chartOption = computed(() => {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: data.map(item => {
-        const d = new Date(item.date)
-        return `${d.getMonth() + 1}/${d.getDate()}`
-      }),
+      data: data.map(item => formatDate(item.date, 'M/D')),
       axisLine: { lineStyle: { color: '#64748b' } },
       axisLabel: { color: '#64748b' }
     },

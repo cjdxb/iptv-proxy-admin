@@ -6,13 +6,13 @@ Flask 应用工厂
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
 from flask_cors import CORS
+from sqlalchemy import inspect, text
+from loguru import logger
 
 from .config import config
 
 db = SQLAlchemy()
-login_manager = LoginManager()
 
 # 读取版本号
 def get_version():
@@ -27,16 +27,69 @@ def get_version():
 __version__ = get_version()
 
 
-def create_app():
+def _ensure_users_schema():
+    """兼容旧库：为 users 表补充 must_change_password 列"""
+    inspector = inspect(db.engine)
+    table_names = set(inspector.get_table_names())
+    if 'users' not in table_names:
+        return
+
+    columns = {column['name'] for column in inspector.get_columns('users')}
+    if 'must_change_password' in columns:
+        return
+
+    db.session.execute(
+        text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0")
+    )
+    db.session.commit()
+
+
+def _quote_mysql_identifier(identifier):
+    """为 MySQL 标识符添加安全引用"""
+    return f"`{identifier.replace('`', '``')}`"
+
+
+def _drop_mysql_foreign_keys():
+    """移除 MySQL 库中现存的外键约束（仅迁移历史数据用）"""
+    if db.engine.dialect.name != 'mysql':
+        return
+
+    inspector = inspect(db.engine)
+    fk_items = []
+    for table_name in inspector.get_table_names():
+        for fk in inspector.get_foreign_keys(table_name):
+            fk_name = fk.get('name')
+            if fk_name:
+                fk_items.append((table_name, fk_name))
+
+    if not fk_items:
+        return
+
+    dropped_count = 0
+    for table_name, fk_name in fk_items:
+        try:
+            db.session.execute(
+                text(
+                    f"ALTER TABLE {_quote_mysql_identifier(table_name)} "
+                    f"DROP FOREIGN KEY {_quote_mysql_identifier(fk_name)}"
+                )
+            )
+            db.session.commit()
+            dropped_count += 1
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"移除外键失败: table={table_name}, fk={fk_name}, error={e}")
+
+    if dropped_count > 0:
+        logger.info(f"已移除历史外键约束: {dropped_count} 个")
+
+
+def create_app(start_background_services=True):
     """创建并配置 Flask 应用"""
     app = Flask(__name__)
     
     # 基础配置
-    app.config['SECRET_KEY'] = config.get('session', {}).get('secret_key', 'dev-secret-key')
-    
-    # Session Cookie 配置
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SECRET_KEY'] = config.get('jwt', {}).get('secret_key', 'default-jwt-secret-key')
     
     # 数据库配置
     db_config = config.get('database', {})
@@ -69,15 +122,7 @@ def create_app():
     
     # 初始化扩展
     db.init_app(app)
-    login_manager.init_app(app)
     CORS(app, supports_credentials=True)
-    
-    # 配置用户加载器
-    @login_manager.user_loader
-    def load_user(user_id):
-        from .models.user import User
-        # 使用 SQLAlchemy 2.0 兼容的方式
-        return db.session.get(User, int(user_id))
     
     # 注册蓝图
     from .api import auth, channels, groups, settings, subscription, proxy, health, dashboard, history
@@ -96,26 +141,31 @@ def create_app():
     # 创建数据库表
     with app.app_context():
         db.create_all()
+        _drop_mysql_foreign_keys()
+        _ensure_users_schema()
+
         # 初始化默认管理员用户
-        from .models.user import User
-        if not User.query.filter_by(username='admin').first():
-            admin = User(username='admin')
+        from .models.users import Users
+        admin = Users.query.filter_by(username='admin').first()
+        if not admin:
+            admin = Users(username='admin')
             admin.set_password('admin123')
+            admin.must_change_password = True
             admin.generate_token()
             db.session.add(admin)
+            db.session.commit()
+        elif admin.check_password('admin123') and not admin.must_change_password:
+            # 兼容旧版本：若仍使用默认密码，则强制首登改密
+            admin.must_change_password = True
             db.session.commit()
 
         # 加载数据库中的运行时配置
         from .config import load_runtime_config_from_db
         load_runtime_config_from_db()
     
-    # 启动健康检测定时任务
-    if config.get('health_check', {}).get('enabled', True):
+    # 启动 Web 进程内后台服务
+    if start_background_services and config.get('health_check', {}).get('enabled', True):
         from .services.health_checker import start_health_checker
         start_health_checker(app)
-
-    # 启动观看历史定期保存服务
-    from .services.watch_history_saver import start_watch_history_saver
-    start_watch_history_saver(app)
 
     return app

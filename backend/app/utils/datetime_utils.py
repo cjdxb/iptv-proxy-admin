@@ -30,7 +30,7 @@ def to_utc_naive():
     返回:
         datetime: 不带时区信息的 UTC datetime 对象
     """
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def to_iso8601_utc(dt):
