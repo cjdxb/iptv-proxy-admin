@@ -136,8 +136,11 @@ SERVER_DEBUG=true
 DATABASE_TYPE=sqlite
 DATABASE_PATH=data/iptv.db
 
-# Session 密钥
-SESSION_SECRET_KEY=your-secret-key-here
+# JWT 配置
+JWT_SECRET_KEY=your-jwt-secret-key-here
+JWT_ALGORITHM=HS256
+JWT_ACCESS_EXPIRES_HOURS=24
+JWT_REFRESH_EXPIRES_DAYS=7
 
 # 健康检测
 HEALTH_CHECK_ENABLED=true

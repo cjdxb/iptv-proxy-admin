@@ -6,29 +6,122 @@ import router from '@/router'
 const http = axios.create({
     baseURL: '/api',
     timeout: 30000,
-    withCredentials: true,  // 启用 cookie 发送
     headers: {
         'Content-Type': 'application/json'
     }
 })
 
-// 请求拦截器（不再需要手动添加 token）
+// 刷新令牌专用客户端（不走业务拦截器，避免递归）
+const refreshClient = axios.create({
+    baseURL: '/api',
+    timeout: 30000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+})
+
+let refreshPromise = null
+
+function redirectToLoginIfNeeded() {
+    if (router.currentRoute.value.path !== '/login') {
+        router.push('/login')
+    }
+}
+
+function redirectToAccountIfNeeded() {
+    if (router.currentRoute.value.path !== '/account') {
+        router.push('/account')
+    }
+}
+
+function shouldSkipRefresh(url = '') {
+    return url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout')
+}
+
+// 请求拦截器（自动添加 access token）
 http.interceptors.request.use(
-    config => config,
+    config => {
+        const authStore = useAuthStore()
+        if (authStore.accessToken) {
+            config.headers = config.headers || {}
+            config.headers.Authorization = `Bearer ${authStore.accessToken}`
+        }
+        return config
+    },
     error => Promise.reject(error)
 )
 
 // 响应拦截器
 http.interceptors.response.use(
     response => response,
-    error => {
-        // 401 表示未认证
-        if (error.response?.status === 401) {
-            const authStore = useAuthStore()
-            authStore.logout()
-            router.push('/login')
+    async error => {
+        const status = error.response?.status
+        const originalRequest = error.config || {}
+        const requestUrl = originalRequest.url || ''
+        const authStore = useAuthStore()
+
+        if (status === 403 && error.response?.data?.code === 'must_change_password') {
+            authStore.setAuthData({
+                user: {
+                    ...(authStore.user || {}),
+                    must_change_password: true
+                }
+            })
+            redirectToAccountIfNeeded()
+            return Promise.reject(error)
         }
-        return Promise.reject(error)
+
+        if (status !== 401) {
+            return Promise.reject(error)
+        }
+
+        // 登录失败本身不触发刷新
+        if (requestUrl.includes('/auth/login')) {
+            return Promise.reject(error)
+        }
+
+        // refresh 接口自身失败或重试后仍失败，直接清理登录态
+        if (shouldSkipRefresh(requestUrl) || originalRequest._retry) {
+            authStore.clearAuthState()
+            redirectToLoginIfNeeded()
+            return Promise.reject(error)
+        }
+
+        if (!authStore.refreshToken) {
+            authStore.clearAuthState()
+            redirectToLoginIfNeeded()
+            return Promise.reject(error)
+        }
+
+        originalRequest._retry = true
+
+        try {
+            if (!refreshPromise) {
+                refreshPromise = refreshClient
+                    .post('/auth/refresh', { refresh_token: authStore.refreshToken })
+                    .then(response => {
+                        const data = response.data || {}
+                        authStore.setAuthData({
+                            user: data.user || authStore.user,
+                            accessToken: data.access_token,
+                            refreshToken: data.refresh_token
+                        })
+                        return data.access_token
+                    })
+                    .finally(() => {
+                        refreshPromise = null
+                    })
+            }
+
+            const newAccessToken = await refreshPromise
+            originalRequest.headers = originalRequest.headers || {}
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+            return http(originalRequest)
+        } catch (refreshError) {
+            authStore.clearAuthState()
+            redirectToLoginIfNeeded()
+            return Promise.reject(refreshError)
+        }
     }
 )
 
@@ -37,7 +130,8 @@ const api = {
     // 认证
     auth: {
         login: (username, password) => http.post('/auth/login', { username, password }),
-        logout: () => http.post('/auth/logout'),
+        logout: (refreshToken) => http.post('/auth/logout', { refresh_token: refreshToken }),
+        refresh: (refreshToken) => http.post('/auth/refresh', { refresh_token: refreshToken }),
         me: () => http.get('/auth/me'),
         resetToken: () => http.post('/auth/reset-token'),
         changePassword: (oldPassword, newPassword) =>

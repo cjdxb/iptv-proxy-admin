@@ -53,7 +53,7 @@
 **仅支持环境变量配置的项（需重启服务生效）：**
 - 🔧 **服务器**: `SERVER_HOST`, `SERVER_PORT`, `SERVER_DEBUG`
 - 🔧 **数据库**: `DATABASE_TYPE`, `DATABASE_PATH`, `MYSQL_*` 系列
-- 🔧 **会话**: `SESSION_SECRET_KEY`
+- 🔧 **认证（JWT）**: `JWT_*`
 - 🔧 **健康检测调度**: `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_INTERVAL`
 - 🔧 **观看历史**: `WATCH_HISTORY_SAVE_INTERVAL`
 
@@ -131,18 +131,31 @@
 
 ---
 
-### 会话配置
+### JWT 认证配置
 
-#### SESSION_SECRET_KEY
-- **说明**: Flask Session 密钥（用于加密会话数据）
+#### JWT_SECRET_KEY
+- **说明**: JWT 签名密钥（必须配置）
 - **类型**: String
-- **默认值**: `default-secret-key`
-- **示例**: `your-random-secret-key-change-in-production`
-- **注意**: 生产环境必须更改为随机字符串
-- **生成方法**:
-  ```bash
-  python -c "import secrets; print(secrets.token_hex(32))"
-  ```
+- **默认值**: `default-jwt-secret-key`
+- **示例**: `your-jwt-secret-key-change-in-production`
+
+#### JWT_ALGORITHM
+- **说明**: JWT 签名算法
+- **类型**: String
+- **默认值**: `HS256`
+- **示例**: `HS256`
+
+#### JWT_ACCESS_EXPIRES_HOURS
+- **说明**: Access Token 有效期（小时）
+- **类型**: Integer
+- **默认值**: `24`
+- **示例**: `24`
+
+#### JWT_REFRESH_EXPIRES_DAYS
+- **说明**: Refresh Token 有效期（天）
+- **类型**: Integer
+- **默认值**: `7`
+- **示例**: `7` / `30`
 
 ---
 
@@ -253,8 +266,11 @@ SERVER_DEBUG=true
 DATABASE_TYPE=sqlite
 DATABASE_PATH=data/iptv.db
 
-# Session Config
-SESSION_SECRET_KEY=dev-secret-key
+# JWT Config
+JWT_SECRET_KEY=dev-jwt-secret-key
+JWT_ALGORITHM=HS256
+JWT_ACCESS_EXPIRES_HOURS=24
+JWT_REFRESH_EXPIRES_DAYS=7
 
 # Health Check Config
 HEALTH_CHECK_ENABLED=true
@@ -286,8 +302,11 @@ MYSQL_USER=iptv_user
 MYSQL_PASSWORD=your_secure_password_here
 MYSQL_DB=iptv_production
 
-# Session Config
-SESSION_SECRET_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+# JWT Config
+JWT_SECRET_KEY=9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b
+JWT_ALGORITHM=HS256
+JWT_ACCESS_EXPIRES_HOURS=24
+JWT_REFRESH_EXPIRES_DAYS=7
 
 # Health Check Config
 HEALTH_CHECK_ENABLED=true
@@ -400,7 +419,7 @@ sudo journalctl -u iptv-admin -f
 ## 安全建议
 
 1. **生产环境必须修改的配置：**
-   - `SESSION_SECRET_KEY` - 使用随机密钥
+   - `JWT_SECRET_KEY` - 使用随机密钥
    - `SERVER_DEBUG` - 必须设置为 `false`
    - 数据库密码 - 使用强密码
 

@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify, Response, stream_with_context
 from loguru import logger
 from sqlalchemy import select
 from app import db
-from app.models.user import User
+from app.models.users import Users
 from app.models.channel import Channel
 from app.models.watch_history import WatchHistory
 from app.models.active_connection import ActiveConnection
@@ -53,7 +53,7 @@ def stream_channel(channel_id):
     if not token:
         return jsonify({'error': '缺少 Token'}), 401
     
-    user = User.query.filter_by(token=token).first()
+    user = Users.query.filter_by(token=token).first()
     if not user:
         return jsonify({'error': 'Token 无效'}), 401
 
@@ -149,12 +149,18 @@ def stream_channel(channel_id):
             except Exception as e:
                 logger.error(f"保存观看记录失败: connection_id={connection_id}, error={e}")
     
-    # 获取原始响应的 Content-Type
+    # 获取原始响应的 Content-Type（失败时回退默认值）
+    content_type = 'video/mp2t'
     try:
-        head_response = requests.head(stream_url, timeout=10)
-        content_type = head_response.headers.get('Content-Type', 'video/mp2t')
-    except:
-        content_type = 'video/mp2t'
+        head_response = requests.head(stream_url, timeout=10, allow_redirects=True)
+        if head_response.ok:
+            content_type = head_response.headers.get('Content-Type', content_type)
+        else:
+            logger.warning(
+                f"探测 Content-Type 失败: url={stream_url}, status={head_response.status_code}"
+            )
+    except requests.RequestException as e:
+        logger.warning(f"探测 Content-Type 异常: url={stream_url}, error={e}")
     
     return Response(
         stream_with_context(generate()),
@@ -171,14 +177,14 @@ def get_proxy_status():
             ActiveConnection.connection_id,
             ActiveConnection.watch_history_id,
             ActiveConnection.user_id,
-            User.username,
+            Users.username,
             ActiveConnection.channel_id,
             Channel.name.label('channel_name'),
             ActiveConnection.start_time,
             ActiveConnection.last_heartbeat
         ).select_from(ActiveConnection).join(
-            User,
-            ActiveConnection.user_id == User.id,
+            Users,
+            ActiveConnection.user_id == Users.id,
             isouter=True
         ).join(
             Channel,

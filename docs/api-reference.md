@@ -7,7 +7,7 @@
 ## 基础信息
 
 - **基础 URL**: `/api`
-- **认证方式**: 大多数接口需要通过 `/api/auth/login` 获取的会话 Cookie 进行认证
+- **认证方式**: 大多数接口需要通过 `/api/auth/login` 获取 JWT，并在请求头中携带 `Authorization: Bearer <access_token>`
 - **请求头**: 默认使用 `application/json` 格式发送数据
 - **响应格式**: JSON
 
@@ -17,42 +17,50 @@
 
 ### 用户登录
 - **接口**: `POST /api/auth/login`
-- **描述**: 用户身份验证并返回会话
+- **描述**: 用户身份验证并返回 `access_token` + `refresh_token`
 - **参数**:
   - Request Body (JSON): `{username: String, password: String}`
-- **响应**: `{success: Boolean, message: String, data: Object}`
+- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
 
 ### 用户登出
 - **接口**: `POST /api/auth/logout`
-- **描述**: 清除用户会话
-- **参数**: 无
-- **响应**: `{success: Boolean, message: String}`
+- **描述**: 吊销当前 `refresh_token`
+- **参数**:
+  - Request Body (JSON): `{refresh_token: String}`（可选，传入则会吊销）
+- **响应**: `{message: String}`
+
+### 刷新 Access Token
+- **接口**: `POST /api/auth/refresh`
+- **描述**: 使用 `refresh_token` 获取新的令牌对（旧 refresh_token 会失效）
+- **参数**:
+  - Request Body (JSON): `{refresh_token: String}`
+- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
 
 ### 获取当前用户信息
 - **接口**: `GET /api/auth/me`
 - **描述**: 获取当前已认证用户的信息
 - **参数**: 无
-- **响应**: `{success: Boolean, data: {id, username, created_at}}`
+- **响应**: `{id, username, token, created_at}`
 
 ### 重置订阅 Token
 - **接口**: `POST /api/auth/reset-token`
 - **描述**: 重新生成订阅访问令牌
 - **参数**: 无
-- **响应**: `{success: Boolean, message: String, data: {token}}`
+- **响应**: `{message: String, token: String}`
 
 ### 修改密码
 - **接口**: `POST /api/auth/change-password`
 - **描述**: 修改当前用户密码
 - **参数**:
   - Request Body (JSON): `{old_password: String, new_password: String}`
-- **响应**: `{success: Boolean, message: String}`
+- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
 
 ### 修改用户名
 - **接口**: `POST /api/auth/change-username`
 - **描述**: 修改当前用户名
 - **参数**:
   - Request Body (JSON): `{username: String}`
-- **响应**: `{success: Boolean, message: String}`
+- **响应**: `{message: String, username: String}`
 
 ---
 
@@ -465,7 +473,9 @@
 // 获取频道列表
 fetch('/api/channels?page=1&per_page=20', {
   method: 'GET',
-  credentials: 'include'
+  headers: {
+    'Authorization': 'Bearer your_access_token'
+  }
 })
 .then(response => response.json())
 .then(data => console.log(data));
@@ -475,7 +485,7 @@ fetch('/api/channels', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'credentials': 'include'
+    'Authorization': 'Bearer your_access_token'
   },
   body: JSON.stringify({
     name: '测试频道',
@@ -491,11 +501,11 @@ fetch('/api/channels', {
 ```bash
 # 获取当前用户信息
 curl -X GET http://localhost:8000/api/auth/me \
-  -H "Cookie: session=your_session_cookie"
+  -H "Authorization: Bearer your_access_token"
 
 # 创建新频道
 curl -X POST http://localhost:8000/api/channels \
   -H "Content-Type: application/json" \
-  -H "Cookie: session=your_session_cookie" \
+  -H "Authorization: Bearer your_access_token" \
   -d '{"name":"测试频道","url":"http://example.com/stream","group_id":1}'
 ```

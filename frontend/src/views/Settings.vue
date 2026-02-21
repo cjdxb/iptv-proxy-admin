@@ -75,7 +75,7 @@
                   检测连接
                 </el-button>
               </div>
-              <div class="form-item-tip">UDPxy 代理服务器地址，例如：http://192.168.1.1:4022</div>
+              <div class="form-item-tip">UDPxy 代理服务器地址，例如：http://192.168.1.1:4022（容器部署可尝试 host.docker.internal）</div>
             </div>
           </el-form-item>
 
@@ -256,54 +256,6 @@
         </el-form>
       </el-card>
 
-      <!-- 账户设置 -->
-      <el-card class="settings-card">
-        <template #header>
-          <div class="card-header">
-            <span>👤 账户设置</span>
-          </div>
-        </template>
-        <el-form label-width="140px" label-position="left">
-          <div class="sub-section-title">用户名</div>
-
-          <el-form-item label="当前用户">
-            <div class="form-item-content">
-              <el-input v-model="usernameForm.username" :placeholder="authStore.user?.username" />
-              <div class="form-item-tip">当前用户名：{{ authStore.user?.username }}，用户名长度不能少于3位</div>
-            </div>
-          </el-form-item>
-
-          <el-form-item label=" ">
-            <el-button type="primary" @click="changeUsername" :loading="changingUsername">
-              修改用户名
-            </el-button>
-          </el-form-item>
-
-          <div class="sub-section-title">密码</div>
-
-          <el-form-item label="原密码">
-            <el-input v-model="passwordForm.oldPassword" type="password" show-password />
-          </el-form-item>
-
-          <el-form-item label="新密码">
-            <el-input v-model="passwordForm.newPassword" type="password" show-password />
-          </el-form-item>
-
-          <el-form-item label="确认密码">
-            <div class="form-item-content">
-              <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
-              <div class="form-item-tip">新密码长度不能少于6位</div>
-            </div>
-          </el-form-item>
-
-          <el-form-item label=" ">
-            <el-button type="primary" @click="changePassword" :loading="changingPassword">
-              修改密码
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </el-card>
-
       <!-- 数据管理 -->
       <el-card class="settings-card">
         <template #header>
@@ -383,12 +335,10 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import api from '@/api'
 import { formatDate } from '@/utils/datetime'
 
-const authStore = useAuthStore()
 const siteStore = useSiteStore()
 
 const loading = ref(false)
@@ -396,8 +346,6 @@ const savingBasic = ref(false)
 const savingStreaming = ref(false)
 const savingHealthCheck = ref(false)
 const savingWatchSession = ref(false)
-const changingPassword = ref(false)
-const changingUsername = ref(false)
 const savingRetention = ref(false)
 const cleaning = ref(false)
 const loadingStats = ref(false)
@@ -420,16 +368,6 @@ const settings = reactive({
 })
 
 const historyStats = ref(null)
-
-const usernameForm = reactive({
-  username: ''
-})
-
-const passwordForm = reactive({
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-})
 
 async function fetchSettings() {
   loading.value = true
@@ -498,7 +436,6 @@ async function fetchSettings() {
     }
     loadedHistoryWorkerInterval.value = settings.history_worker_interval_seconds
 
-    usernameForm.username = authStore.user?.username || ''
     // 同时获取历史统计
     await fetchHistoryStats()
   } catch (error) {
@@ -652,65 +589,6 @@ async function saveWatchSessionConfig() {
     ElMessage.error('保存失败')
   } finally {
     savingWatchSession.value = false
-  }
-}
-
-async function changeUsername() {
-  const newUsername = usernameForm.username
-  if (!newUsername) {
-    ElMessage.warning('用户名不能为空')
-    return
-  }
-
-  if (newUsername.length < 3) {
-    ElMessage.warning('用户名长度不能少于3位')
-    return
-  }
-
-  if (newUsername === authStore.user?.username) {
-    ElMessage.info('用户名未变更')
-    return
-  }
-
-  changingUsername.value = true
-  try {
-    const response = await api.auth.changeUsername(newUsername)
-    ElMessage.success('用户名修改成功')
-    authStore.user.username = response.data.username
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || '修改失败')
-  } finally {
-    changingUsername.value = false
-  }
-}
-
-async function changePassword() {
-  if (!passwordForm.oldPassword || !passwordForm.newPassword) {
-    ElMessage.warning('请填写原密码和新密码')
-    return
-  }
-
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning('两次输入的密码不一致')
-    return
-  }
-
-  if (passwordForm.newPassword.length < 6) {
-    ElMessage.warning('新密码长度不能少于6位')
-    return
-  }
-
-  changingPassword.value = true
-  try {
-    await api.auth.changePassword(passwordForm.oldPassword, passwordForm.newPassword)
-    ElMessage.success('密码修改成功')
-    passwordForm.oldPassword = ''
-    passwordForm.newPassword = ''
-    passwordForm.confirmPassword = ''
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || '密码修改失败')
-  } finally {
-    changingPassword.value = false
   }
 }
 

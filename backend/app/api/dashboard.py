@@ -6,7 +6,8 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 from app import db
-from app.models.channel import Channel, ChannelGroup
+from app.models.channel import Channel
+from app.models.channel_group import ChannelGroup
 from app.models.watch_history import WatchHistory
 from app.models.active_connection import ActiveConnection
 from app.utils.auth import login_required

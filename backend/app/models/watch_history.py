@@ -22,8 +22,8 @@ class WatchHistory(db.Model):
     
     # 关联（无数据库外键约束，使用显式关联条件）
     user = db.relationship(
-        'User',
-        primaryjoin='WatchHistory.user_id == User.id',
+        'Users',
+        primaryjoin='WatchHistory.user_id == Users.id',
         foreign_keys=[user_id],
         back_populates='watch_history'
     )

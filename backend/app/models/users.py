@@ -9,7 +9,7 @@ from app import db
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 
 
-class User(db.Model):
+class Users(db.Model):
     """用户表"""
     __tablename__ = 'users'
     
@@ -22,7 +22,7 @@ class User(db.Model):
 
     watch_history = db.relationship(
         'WatchHistory',
-        primaryjoin='User.id == WatchHistory.user_id',
+        primaryjoin='Users.id == WatchHistory.user_id',
         foreign_keys='WatchHistory.user_id',
         back_populates='user',
         lazy='dynamic'

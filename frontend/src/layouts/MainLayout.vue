@@ -80,6 +80,9 @@
             </div>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="account">
+                  👤 账户设置
+                </el-dropdown-item>
                 <el-dropdown-item command="logout">
                   👋 退出登录
                 </el-dropdown-item>
@@ -194,8 +197,8 @@ async function handleCommand(command) {
   if (command === 'logout') {
     await authStore.logout()
     router.push('/login')
-  } else if (command === 'settings') {
-    router.push('/settings')
+  } else if (command === 'account') {
+    router.push('/account')
   }
 }
 

@@ -1,43 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-频道和分组模型
+频道模型
 """
 
 import re
 from app import db
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
-
-
-class ChannelGroup(db.Model):
-    """频道分组表"""
-    __tablename__ = 'channel_groups'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=to_utc_naive)
-    
-    # 关联频道（无数据库外键约束，使用显式关联条件）
-    channels = db.relationship(
-        'Channel',
-        primaryjoin='ChannelGroup.id == Channel.group_id',
-        foreign_keys='Channel.group_id',
-        back_populates='group',
-        lazy='dynamic'
-    )
-    
-    def to_dict(self, include_channels=False):
-        """转换为字典"""
-        data = {
-            'id': self.id,
-            'name': self.name,
-            'sort_order': self.sort_order,
-            'channel_count': self.channels.count(),
-            'created_at': to_iso8601_utc(self.created_at)  # UTC 时间 + Z 后缀
-        }
-        if include_channels:
-            data['channels'] = [ch.to_dict() for ch in self.channels.order_by(Channel.sort_order).all()]
-        return data
 
 
 class Channel(db.Model):

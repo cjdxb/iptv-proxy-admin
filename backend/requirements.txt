@@ -1,10 +1,10 @@
 Flask==3.0.0
 Flask-RESTful==0.3.10
-Flask-Login==0.6.3
 Flask-SQLAlchemy==3.1.1
 Flask-CORS==4.0.0
 SQLAlchemy==2.0.23
 Werkzeug==3.0.1
+PyJWT==2.8.0
 PyYAML==6.0.1
 requests==2.31.0
 APScheduler==3.10.4
@@ -13,4 +13,3 @@ loguru
 pymysql
 cryptography
 gunicorn==21.2.0
-

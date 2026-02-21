@@ -31,8 +31,11 @@ def load_config():
             'password': os.getenv('MYSQL_PASSWORD', 'root'),
             'db': os.getenv('MYSQL_DB', 'iptv')
         },
-        'session': {
-            'secret_key': os.getenv('SESSION_SECRET_KEY', 'default-secret-key')
+        'jwt': {
+            'secret_key': os.getenv('JWT_SECRET_KEY', 'default-jwt-secret-key'),
+            'algorithm': os.getenv('JWT_ALGORITHM', 'HS256'),
+            'access_expires_hours': int(os.getenv('JWT_ACCESS_EXPIRES_HOURS', 24)),
+            'refresh_expires_days': int(os.getenv('JWT_REFRESH_EXPIRES_DAYS', 7))
         },
         'udpxy': {
             'enabled': os.getenv('UDPXY_ENABLED', 'false').lower() == 'true',

@@ -9,7 +9,8 @@ from flask import Blueprint, request, jsonify, Response
 from loguru import logger
 from sqlalchemy import func, inspect
 from app import db
-from app.models.channel import Channel, ChannelGroup
+from app.models.channel import Channel
+from app.models.channel_group import ChannelGroup
 from app.models.watch_history import WatchHistory
 from app.utils.auth import login_required
 
@@ -126,7 +127,7 @@ def save_imported_channels(channels, overwrite, auto_create_group, include_regex
     preserved_channels_count = 0
 
     if overwrite:
-        # 覆盖导入时，保留被历史记录/活跃连接引用的频道，避免外键删除失败
+        # 覆盖导入时，保留被历史记录/活跃连接引用的频道，避免误删仍在使用的数据
         protected_channel_ids = {
             row[0] for row in db.session.query(WatchHistory.channel_id).distinct().all()
         }
