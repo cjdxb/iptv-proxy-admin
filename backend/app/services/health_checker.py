@@ -6,15 +6,11 @@
 import socket
 import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 import requests
 from loguru import logger
 from app.config import config
 from app.utils.datetime_utils import to_utc_naive
-
-scheduler = None
-
 
 def _extract_rtp_udp_addr(url):
     """从 URL 中解析 RTP/UDP 地址。"""
@@ -266,14 +262,6 @@ def run_health_worker_cycle():
     return check_all_channels()
 
 
-def scheduled_health_check():
-    """兼容旧入口：执行一次健康检测。"""
-    logger.info("开始执行定时健康检测...")
-    results = run_health_worker_cycle()
-    logger.info(f"健康检测完成: 总计 {results['total']}, 正常 {results['healthy']}, 异常 {results['unhealthy']}")
-    return results
-
-
 def _get_health_check_interval_seconds():
     """读取健康检测间隔（秒）。"""
     return max(1, int(config.get('health_check', {}).get('interval', 1800)))
@@ -322,51 +310,3 @@ def start_health_worker(app):
     logger.info(f"health-worker已启动: interval={worker_interval}s")
     blocking_scheduler.start()
     return blocking_scheduler
-
-
-def start_health_checker(app):
-    """兼容旧入口：在 Web 进程内启动健康检测（不推荐）。"""
-    global scheduler
-
-    logger.warning("start_health_checker 已废弃，请改用独立 health-worker 进程")
-    if not config.get('health_check', {}).get('enabled', True):
-        logger.warning("HEALTH_CHECK_ENABLED=false，健康检测服务未启动")
-        return None
-
-    if scheduler is not None:
-        return scheduler
-
-    from app.config import load_runtime_config_from_db
-
-    interval = _get_health_check_interval_seconds()
-    scheduler = BackgroundScheduler()
-
-    def job_wrapper():
-        with app.app_context():
-            try:
-                load_runtime_config_from_db()
-                scheduled_health_check()
-            except Exception as e:
-                logger.error(f"健康检测任务执行失败: {e}")
-
-    scheduler.add_job(
-        job_wrapper,
-        'interval',
-        seconds=interval,
-        id='health_check',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True
-    )
-
-    scheduler.start()
-    logger.info(f"健康检测服务已在Web进程启动(兼容模式)，检测间隔: {interval} 秒")
-    return scheduler
-
-
-def stop_health_checker():
-    """停止健康检测定时任务"""
-    global scheduler
-    if scheduler:
-        scheduler.shutdown()
-        scheduler = None

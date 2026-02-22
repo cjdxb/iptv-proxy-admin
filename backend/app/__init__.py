@@ -84,7 +84,7 @@ def _drop_mysql_foreign_keys():
         logger.info(f"已移除历史外键约束: {dropped_count} 个")
 
 
-def create_app(start_background_services=False):
+def create_app():
     """创建并配置 Flask 应用"""
     app = Flask(__name__)
     
@@ -163,9 +163,4 @@ def create_app(start_background_services=False):
         from .config import load_runtime_config_from_db
         load_runtime_config_from_db()
     
-    # 兼容开关：默认不在 Web 进程内启动定时任务，避免与独立 worker 重复执行
-    if start_background_services and config.get('health_check', {}).get('enabled', True):
-        from .services.health_checker import start_health_checker
-        start_health_checker(app)
-
     return app

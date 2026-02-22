@@ -9,7 +9,7 @@ from app.services.health_checker import start_health_worker
 
 
 def main():
-    app = create_app(start_background_services=False)
+    app = create_app()
     start_health_worker(app)
 
 

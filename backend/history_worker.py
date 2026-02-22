@@ -9,10 +9,9 @@ from app.services.watch_history_saver import start_history_worker
 
 
 def main():
-    app = create_app(start_background_services=False)
+    app = create_app()
     start_history_worker(app)
 
 
 if __name__ == '__main__':
     main()
-
