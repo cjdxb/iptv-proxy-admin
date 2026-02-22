@@ -52,13 +52,9 @@ def load_config():
             'buffer_size': int(os.getenv('PROXY_BUFFER_SIZE', 8192))
         },
         'watch_history': {
-            # 兼容旧配置（阶段B后由 HISTORY_WORKER_INTERVAL_SECONDS 替代）
-            'save_interval': int(os.getenv('WATCH_HISTORY_SAVE_INTERVAL', 60)),
             'heartbeat_interval_seconds': int(os.getenv('HEARTBEAT_INTERVAL_SECONDS', 10)),
             'active_heartbeat_timeout_seconds': int(os.getenv('ACTIVE_HEARTBEAT_TIMEOUT_SECONDS', 45)),
-            'history_worker_interval_seconds': int(
-                os.getenv('HISTORY_WORKER_INTERVAL_SECONDS', os.getenv('WATCH_HISTORY_SAVE_INTERVAL', 15))
-            )
+            'history_worker_interval_seconds': int(os.getenv('HISTORY_WORKER_INTERVAL_SECONDS', 15))
         }
     }
 

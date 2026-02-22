@@ -4,7 +4,7 @@
 
 IPTV Proxy Admin 使用 SQLAlchemy ORM 管理数据库，支持 SQLite 和 MySQL 两种数据库。
 
-- 默认数据库：SQLite（`backend/data/iptv.db`）
+- 默认数据库：SQLite（`backend/data/db.db`，若未配置则回退到 `backend/data/iptv.db`）
 - 生产推荐：MySQL 5.7+ / MariaDB 10.3+
 - 字符集：`utf8mb4`（MySQL）
 - 当前核心表：7 张
@@ -273,7 +273,7 @@ WHERE revoked_at IS NOT NULL
 
 ### SQLite 备份
 ```bash
-sqlite3 backend/data/iptv.db ".backup 'backup_$(date +%Y%m%d).db'"
+sqlite3 backend/data/db.db ".backup 'backup_$(date +%Y%m%d).db'"
 ```
 
 ### MySQL 备份

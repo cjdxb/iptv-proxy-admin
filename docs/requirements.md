@@ -2,6 +2,11 @@
 
 ---
 
+> ⚠️ 本文档是**产品需求/规划文档**，用于描述目标能力与设计思路，内容不保证与当前代码实现 1:1 对齐。  
+> 当前实现请优先参考：`README.md`、`docs/api-reference.md`、`docs/configuration.md`、`docs/deployment-guide.md`。
+
+---
+
 ## 📖 目录
 
 1. [项目概述](#项目概述)

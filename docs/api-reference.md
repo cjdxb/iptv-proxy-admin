@@ -1,511 +1,551 @@
 # IPTV Proxy Admin API 文档
 
-本文档描述了 IPTV Proxy Admin 管理系统的 API 接口。
-
----
+本文档基于当前后端实现（`backend/app/api/*.py`）整理。
 
 ## 基础信息
 
-- **基础 URL**: `/api`
-- **认证方式**: 大多数接口需要通过 `/api/auth/login` 获取 JWT，并在请求头中携带 `Authorization: Bearer <access_token>`
-- **请求头**: 默认使用 `application/json` 格式发送数据
-- **响应格式**: JSON
-
----
-
-## 认证接口 - `/auth`
-
-### 用户登录
-- **接口**: `POST /api/auth/login`
-- **描述**: 用户身份验证并返回 `access_token` + `refresh_token`
-- **参数**:
-  - Request Body (JSON): `{username: String, password: String}`
-- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
-
-### 用户登出
-- **接口**: `POST /api/auth/logout`
-- **描述**: 吊销当前 `refresh_token`
-- **参数**:
-  - Request Body (JSON): `{refresh_token: String}`（可选，传入则会吊销）
-- **响应**: `{message: String}`
-
-### 刷新 Access Token
-- **接口**: `POST /api/auth/refresh`
-- **描述**: 使用 `refresh_token` 获取新的令牌对（旧 refresh_token 会失效）
-- **参数**:
-  - Request Body (JSON): `{refresh_token: String}`
-- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
-
-### 获取当前用户信息
-- **接口**: `GET /api/auth/me`
-- **描述**: 获取当前已认证用户的信息
-- **参数**: 无
-- **响应**: `{id, username, token, created_at}`
-
-### 重置订阅 Token
-- **接口**: `POST /api/auth/reset-token`
-- **描述**: 重新生成订阅访问令牌
-- **参数**: 无
-- **响应**: `{message: String, token: String}`
-
-### 修改密码
-- **接口**: `POST /api/auth/change-password`
-- **描述**: 修改当前用户密码
-- **参数**:
-  - Request Body (JSON): `{old_password: String, new_password: String}`
-- **响应**: `{message, user, token_type, access_token, refresh_token, expires_in, refresh_expires_in}`
-
-### 修改用户名
-- **接口**: `POST /api/auth/change-username`
-- **描述**: 修改当前用户名
-- **参数**:
-  - Request Body (JSON): `{username: String}`
-- **响应**: `{message: String, username: String}`
-
----
-
-## 频道管理接口 - `/channels`
-
-### 获取频道列表
-- **接口**: `GET /api/channels`
-- **描述**: 获取频道列表，支持分页和筛选
-- **参数**:
-  - Query: `group_id` (可选): 按分组筛选
-  - Query: `is_active` (可选): 按活跃状态筛选 (true/false)
-  - Query: `protocol` (可选): 按协议筛选，可选值：`http`, `https`, `rtp`, `udp`
-  - Query: `is_healthy` (可选): 按健康状态筛选 (true/false)
-  - Query: `search` (可选): 搜索关键词（支持频道名称、URL 搜索）
-  - Query: `page` (可选): 页码，默认为1
-  - Query: `per_page` (可选): 每页数量，默认为50
-- **响应**: `{success: Boolean, data: {items: Array, pagination: Object}}`
-
-### 创建频道
-- **接口**: `POST /api/channels`
-- **描述**: 创建新的频道
-- **参数**:
-  - Request Body (JSON): `{name: String, url: String, group_id: Number, logo: String, tvg_id: String, ...}`
-- **响应**: `{success: Boolean, data: ChannelObject}`
-
-### 获取频道详情
-- **接口**: `GET /api/channels/{id}`
-- **描述**: 获取指定频道的详细信息
-- **参数**: 路径参数 `id`: 频道唯一标识符
-- **响应**: `{success: Boolean, data: ChannelObject}`
-
-### 更新频道
-- **接口**: `PUT /api/channels/{id}`
-- **描述**: 更新频道信息
-- **参数**:
-  - 路径参数 `id`: 频道唯一标识符
-  - Request Body (JSON): `{name: String, url: String, ...}`
-- **响应**: `{success: Boolean, data: ChannelObject}`
-
-### 删除频道
-- **接口**: `DELETE /api/channels/{id}`
-- **描述**: 删除指定频道
-- **参数**: 路径参数 `id`: 频道唯一标识符
-- **响应**: `{success: Boolean, message: String}`
-
-### 批量删除频道
-- **接口**: `POST /api/channels/batch-delete`
-- **描述**: 批量删除多个频道
-- **参数**:
-  - Request Body (JSON): `{ids: Array<Number>}`
-- **响应**: `{success: Boolean, message: String}`
-
-### 更新频道排序
-- **接口**: `POST /api/channels/sort`
-- **描述**: 更新频道的显示顺序
-- **参数**:
-  - Request Body (JSON): `{orders: Array<{id: Number, sort_order: Number}>}`
-- **响应**: `{success: Boolean, message: String}`
-
----
-
-## 分组管理接口 - `/groups`
-
-### 获取分组列表
-- **接口**: `GET /api/groups`
-- **描述**: 获取所有分组列表
-- **参数**:
-  - Query: `include_channels` (可选): 是否包含频道信息 (Boolean)
-- **响应**: `{success: Boolean, data: Array<GroupObject>}`
-
-### 创建分组
-- **接口**: `POST /api/groups`
-- **描述**: 创建新分组
-- **参数**:
-  - Request Body (JSON): `{name: String, sort_order: Number}`
-- **响应**: `{success: Boolean, data: GroupObject}`
-
-### 获取分组详情
-- **接口**: `GET /api/groups/{id}`
-- **描述**: 获取指定分组的详细信息
-- **参数**:
-  - 路径参数 `id`: 分组唯一标识符
-  - Query: `include_channels` (可选): 是否包含频道信息
-- **响应**: `{success: Boolean, data: GroupObject}`
-
-### 更新分组
-- **接口**: `PUT /api/groups/{id}`
-- **描述**: 更新分组信息
-- **参数**:
-  - 路径参数 `id`: 分组唯一标识符
-  - Request Body (JSON): `{name: String, sort_order: Number}`
-- **响应**: `{success: Boolean, data: GroupObject}`
-
-### 删除分组
-- **接口**: `DELETE /api/groups/{id}`
-- **描述**: 删除指定分组
-- **参数**: 路径参数 `id`: 分组唯一标识符
-- **响应**: `{success: Boolean, message: String}`
-
-### 更新分组排序
-- **接口**: `POST /api/groups/sort`
-- **描述**: 更新分组的显示顺序
-- **参数**:
-  - Request Body (JSON): `{orders: Array<{id: Number, sort_order: Number}>}`
-- **响应**: `{success: Boolean, message: String}`
-
-### 删除空分组
-- **接口**: `DELETE /api/groups/empty`
-- **描述**: 删除所有不包含频道的空分组
-- **参数**: 无
-- **响应**: `{success: Boolean, message: String}`
-
----
-
-## 系统设置接口 - `/settings`
-
-### 获取所有设置
-- **接口**: `GET /api/settings`
-- **描述**: 获取系统所有配置项
-- **参数**: 无
-- **响应**: `{success: Boolean, data: {key: value}}`
-
-### 批量更新设置
-- **接口**: `POST /api/settings`
-- **描述**: 批量更新多个配置项
-- **参数**:
-  - Request Body (JSON): `{key1: value1, key2: value2, ...}`
-- **响应**: `{success: Boolean, message: String}`
-
-### 获取单项设置
-- **接口**: `GET /api/settings/{key}`
-- **描述**: 获取指定配置项的值
-- **参数**: 路径参数 `key`: 配置项键名
-- **响应**: `{success: Boolean, data: value}`
-
-### 更新单项设置
-- **接口**: `PUT /api/settings/{key}`
-- **描述**: 更新指定配置项的值
-- **参数**:
-  - 路径参数 `key`: 配置项键名
-  - Request Body (JSON): `{value: newValue}`
-- **响应**: `{success: Boolean, message: String}`
-
-### 重新加载运行时配置
-- **接口**: `POST /api/settings/reload`
-- **描述**: 从数据库重新加载运行时配置
-- **参数**: 无
-- **响应**: `{message: String}`
-- **说明**: 在 Web 界面修改配置后立即生效，无需重启服务。主要用于重载可热更新的配置项（如健康检测、UDPxy、代理缓冲区等）
-
-### 测试 UDPxy 连接
-- **接口**: `POST /api/settings/test-udpxy`
-- **描述**: 测试 UDPxy 服务器的连接性
-- **参数**:
-  - Request Body (JSON): `{url: String}`
-  - 示例: `{"url": "http://192.168.1.1:3680"}`
-- **响应**:
-  ```json
-  {
-    "success": true,
-    "message": "UDPxy 服务器连接成功",
-    "status_code": 200
-  }
-  ```
-  或
-  ```json
-  {
-    "success": false,
-    "message": "连接超时，请检查服务器地址或网络连接"
-  }
-  ```
-- **说明**: 用于验证 UDPxy 服务器配置是否正确。会尝试访问 `/status` 端点来测试连接
-
----
-
-## 仪表盘接口 - `/dashboard`
-
-### 获取仪表盘统计
-- **接口**: `GET /api/dashboard`
-- **描述**: 获取系统整体统计数据
-- **参数**: 无
-- **响应**: `{success: Boolean, data: DashboardStatsObject}`
-
-### 获取观看时长统计
-- **接口**: `GET /api/dashboard/watch-stats`
-- **描述**: 获取用户观看时长统计信息
-- **参数**:
-  - Query: `days` (可选): 统计天数，默认为7天
-- **响应**: `{success: Boolean, data: WatchStatsArray}`
-
-### 获取频道排行
-- **接口**: `GET /api/dashboard/channel-ranking`
-- **描述**: 获取最受欢迎频道排行（按观看时长排序）
-- **参数**:
-  - Query: `days` (可选): 统计天数，范围 1-30，默认为 7
-  - Query: `limit` (可选): 返回频道数量限制，范围 1-50，默认为 10
-- **响应**:
-  ```json
-  {
-    "ranking": [
-      {
-        "channel_id": 1,
-        "channel_name": "CCTV-1",
-        "total_duration": 86400,
-        "watch_count": 25
-      },
-      {
-        "channel_id": 2,
-        "channel_name": "湖南卫视",
-        "total_duration": 72000,
-        "watch_count": 18
-      }
-    ],
-    "days": 7
-  }
-  ```
-- **说明**:
-  - `total_duration`: 总观看时长（秒）
-  - `watch_count`: 观看次数（独立观看记录数）
-  - 排序规则：按 `total_duration` 降序排列
-
----
-
-## 健康检测接口 - `/health`
-
-### 获取健康状态概览
-- **接口**: `GET /api/health/status`
-- **描述**: 获取系统健康状态总览
-- **参数**: 无
-- **响应**: `{success: Boolean, data: HealthStatusObject}`
-
-### 触发全量检测
-- **接口**: `POST /api/health/check-all`
-- **描述**: 对所有频道执行可用性检测
-- **参数**: 无
-- **响应**: `{success: Boolean, message: String, data: DetectionResults}`
-
-### 检测单个频道
-- **接口**: `POST /api/health/check/{id}`
-- **描述**: 对指定频道执行可用性检测
-- **参数**: 路径参数 `id`: 频道唯一标识符
-- **响应**: `{success: Boolean, message: String, data: ChannelHealth}`
-
----
-
-## 代理服务接口 - `/proxy`
-
-### 直播流代理
-- **接口**: `GET /api/proxy/stream/{id}`
-- **描述**: 代理直播流，提供统一播放入口
-- **参数**:
-  - 路径参数 `id`: 频道唯一标识符
-  - Query: `token` (必填): 订阅令牌
-- **响应**: 直接返回直播流数据
-
-### 获取代理状态
-- **接口**: `GET /api/proxy/status`
-- **描述**: 获取当前代理连接状态
-- **参数**: 无
-- **响应**: `{success: Boolean, data: ProxyStatusObject}`
-
----
-
-## 订阅服务接口 - `/subscription`
-
-### 获取订阅链接
-- **接口**: `GET /api/subscription/urls`
-- **描述**: 获取各种格式的订阅链接地址
-- **参数**: 无
-- **响应**: `{success: Boolean, data: {m3u_url, txt_url}}`
-
-### 下载 M3U 播放列表
-- **接口**: `GET /api/subscription/m3u`
-- **描述**: 以 M3U 格式下载播放列表
-- **参数**: Query: `token` (必填): 订阅令牌
-- **响应**: M3U 格式的播放列表文本
-
-### 下载 TXT 播放列表
-- **接口**: `GET /api/subscription/txt`
-- **描述**: 以 TXT 格式下载播放列表
-- **参数**: Query: `token` (必填): 订阅令牌
-- **响应**: TXT 格式的播放列表文本
-
----
-
-## 观看历史管理接口 - `/history`
-
-### 获取历史连接列表
-- **接口**: `GET /api/history/list`
-- **描述**: 获取观看历史连接记录列表（仅显示观看时长 >= 5 秒的记录）
-- **参数**:
-  - Query: `page` (可选): 页码，默认为1
-  - Query: `per_page` (可选): 每页数量，默认为20
-- **响应**:
-  ```json
-  {
-    "items": [
-      {
-        "id": 1,
-        "user_id": 1,
-        "username": "admin",
-        "channel_id": 10,
-        "channel_name": "CCTV-1",
-        "start_time": "2026-01-29T10:30:00Z",
-        "end_time": "2026-01-29T11:15:00Z",
-        "duration": 2700,
-        "watch_date": "2026-01-29"
-      }
-    ],
-    "total": 100,
-    "page": 1,
-    "per_page": 20,
-    "pages": 5
-  }
-  ```
-
-### 获取观看历史统计
-- **接口**: `GET /api/history/stats`
-- **描述**: 获取观看历史统计信息（总记录数、最早记录、最新记录）
-- **参数**: 无
-- **响应**:
-  ```json
-  {
-    "total_count": 1250,
-    "earliest_date": "2026-01-15T08:30:00Z",
-    "latest_date": "2026-01-29T14:20:00Z"
-  }
-  ```
-
-### 清空观看历史
-- **接口**: `POST /api/history/cleanup`
-- **描述**: 清空所有观看历史记录（危险操作，不可恢复）
-- **参数**: 无
-- **响应**:
-  ```json
-  {
-    "message": "成功清空 1250 条观看历史记录",
-    "deleted_count": 1250,
-    "count_before": 1250,
-    "count_after": 0
-  }
-  ```
-
----
-
-## 导入导出接口 - `/import-export`
-
-### 导入频道列表
-- **接口**: `POST /api/import-export/import`
-- **描述**: 从上传的文件或文本内容导入频道列表
-- **参数**:
-  - Request Body (JSON):
-    ```json
-    {
-      "content": "频道列表文本内容",
-      "format": "m3u",
-      "overwrite": false,
-      "auto_create_group": true,
-      "include_regex": "",
-      "exclude_regex": ""
-    }
-    ```
-  - 或 FormData: `file` (multipart/form-data)
-- **响应**: `{success: Boolean, message: String, data: ImportResultObject}`
-
-### 从 URL 导入频道列表
-- **接口**: `POST /api/import-export/import-url`
-- **描述**: 从指定 URL 拉取并导入频道列表
-- **参数**:
-  - Request Body (JSON):
-    ```json
-    {
-      "url": "http://example.com/playlist.m3u",
-      "overwrite": false,
-      "auto_create_group": true,
-      "format": "auto",
-      "include_regex": "",
-      "exclude_regex": ""
-    }
-    ```
-- **响应**: `{success: Boolean, message: String, data: ImportResultObject}`
-
-### 导出频道列表
-- **接口**: `GET /api/import-export/export`
-- **描述**: 导出频道列表为指定格式
-- **参数**:
-  - Query: `format` (必填): 导出格式，可选值：`m3u`, `txt`
-- **响应**: 文件流 (Content-Type: application/octet-stream)
-
----
-
-## 错误码说明
-
-| 错误码 | 说明 |
-| :--- | :--- |
-| `200` | 成功 |
-| `400` | 请求参数错误 |
-| `401` | 未授权或会话过期 |
-| `403` | 权限不足 |
-| `404` | 资源不存在 |
-| `422` | 数据验证失败 |
-| `500` | 服务器内部错误 |
-
----
-
-## 使用示例
-
-### JavaScript 示例
-```javascript
-// 获取频道列表
-fetch('/api/channels?page=1&per_page=20', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer your_access_token'
-  }
-})
-.then(response => response.json())
-.then(data => console.log(data));
-
-// 创建频道
-fetch('/api/channels', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer your_access_token'
+- 基础路径：`/api`
+- 数据格式：JSON（订阅/流媒体接口除外）
+- 管理端认证：JWT Bearer Token
+- 播放/订阅认证：URL Query 中的 `token`
+
+管理端请求头示例：
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+## 认证接口 `/auth`
+
+### `POST /api/auth/login`
+
+登录并返回 Access/Refresh Token。
+
+请求体：
+
+```json
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+成功响应：
+
+```json
+{
+  "message": "登录成功",
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "must_change_password": true,
+    "token": "<subscription_token>",
+    "created_at": "2026-02-01T10:00:00Z"
   },
-  body: JSON.stringify({
-    name: '测试频道',
-    url: 'http://example.com/stream',
-    group_id: 1
-  })
-})
-.then(response => response.json())
-.then(data => console.log(data));
+  "token_type": "Bearer",
+  "access_token": "<jwt_access>",
+  "refresh_token": "<refresh_token>",
+  "expires_in": 86400,
+  "refresh_expires_in": 604800
+}
 ```
 
-### cURL 示例
-```bash
-# 获取当前用户信息
-curl -X GET http://localhost:8000/api/auth/me \
-  -H "Authorization: Bearer your_access_token"
+### `POST /api/auth/logout`
 
-# 创建新频道
-curl -X POST http://localhost:8000/api/channels \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_access_token" \
-  -d '{"name":"测试频道","url":"http://example.com/stream","group_id":1}'
+可选吊销 refresh token。
+
+请求体（可选）：
+
+```json
+{
+  "refresh_token": "<refresh_token>"
+}
 ```
+
+响应：
+
+```json
+{
+  "message": "登出成功"
+}
+```
+
+### `POST /api/auth/refresh`
+
+使用 refresh token 换新令牌对（旧 refresh token 会被吊销）。
+
+请求体：
+
+```json
+{
+  "refresh_token": "<refresh_token>"
+}
+```
+
+响应结构与 `login` 类似。
+
+### `GET /api/auth/me`
+
+获取当前登录用户信息。
+
+响应：用户对象（`id/username/must_change_password/token/created_at`）。
+
+### `POST /api/auth/reset-token`
+
+重置订阅 token。
+
+响应：
+
+```json
+{
+  "message": "Token 已重置",
+  "token": "<new_subscription_token>"
+}
+```
+
+### `POST /api/auth/change-password`
+
+修改密码，成功后返回新的 Access/Refresh Token。
+
+请求体：
+
+```json
+{
+  "old_password": "old",
+  "new_password": "new123456"
+}
+```
+
+响应结构与 `login` 类似。
+
+### `POST /api/auth/change-username`
+
+修改用户名。
+
+请求体：
+
+```json
+{
+  "username": "new_name"
+}
+```
+
+响应：
+
+```json
+{
+  "message": "用户名修改成功",
+  "username": "new_name"
+}
+```
+
+### 强制改密约束
+
+当用户 `must_change_password=true` 时，除以下接口外，其他受保护接口会返回：
+
+```json
+{
+  "error": "首次登录请先修改密码",
+  "code": "must_change_password"
+}
+```
+
+状态码：`403`
+
+允许访问：
+
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
+
+## 频道接口 `/channels`
+
+### `GET /api/channels`
+
+查询参数：
+
+- `group_id`（int，可选）
+- `is_active`（bool，可选）
+- `protocol`（`http|https|rtp|udp`，可选）
+- `is_healthy`（bool，可选）
+- `search`（可选，按频道名模糊搜索）
+- `page`（默认 `1`）
+- `per_page`（默认 `50`）
+
+响应：
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "per_page": 50,
+  "pages": 0
+}
+```
+
+### `GET /api/channels/{id}`
+
+响应：频道对象。
+
+### `POST /api/channels`
+
+请求体示例：
+
+```json
+{
+  "name": "CCTV-1",
+  "url": "http://example.com/live.m3u8",
+  "group_id": 1,
+  "logo": "",
+  "tvg_id": "cctv1",
+  "sort_order": 0,
+  "is_active": true
+}
+```
+
+响应：
+
+```json
+{
+  "message": "频道创建成功",
+  "channel": {}
+}
+```
+
+### `PUT /api/channels/{id}`
+
+按字段局部更新。
+
+响应：
+
+```json
+{
+  "message": "频道更新成功",
+  "channel": {}
+}
+```
+
+### `DELETE /api/channels/{id}`
+
+响应：
+
+```json
+{
+  "message": "频道删除成功"
+}
+```
+
+### `POST /api/channels/batch-delete`
+
+请求体：
+
+```json
+{
+  "ids": [1, 2, 3]
+}
+```
+
+### `POST /api/channels/sort`
+
+请求体：
+
+```json
+{
+  "orders": [
+    {"id": 1, "sort_order": 10},
+    {"id": 2, "sort_order": 20}
+  ]
+}
+```
+
+## 分组接口 `/groups`
+
+### `GET /api/groups`
+
+查询参数：`include_channels=true|false`（默认 `false`）
+
+响应：分组数组。
+
+### `GET /api/groups/{id}`
+
+响应：分组对象。
+
+### `POST /api/groups`
+
+请求体：
+
+```json
+{
+  "name": "央视",
+  "sort_order": 0
+}
+```
+
+### `PUT /api/groups/{id}`
+
+请求体：`name`、`sort_order` 任意组合。
+
+### `DELETE /api/groups/{id}`
+
+分组下仍有频道时返回 `400`。
+
+### `POST /api/groups/sort`
+
+请求体同频道排序。
+
+### `DELETE /api/groups/empty`
+
+删除空分组。
+
+## 系统设置接口 `/settings`
+
+### `GET /api/settings`
+
+返回 settings 键值对象：
+
+```json
+{
+  "site_name": "IPTV Proxy Admin",
+  "udpxy_enabled": "false"
+}
+```
+
+### `GET /api/settings/{key}`
+
+```json
+{
+  "key": "site_name",
+  "value": "IPTV Proxy Admin"
+}
+```
+
+### `POST /api/settings`
+
+批量写入。
+
+请求体示例：
+
+```json
+{
+  "site_name": "My IPTV",
+  "health_check_threads": "3"
+}
+```
+
+### `PUT /api/settings/{key}`
+
+请求体：
+
+```json
+{
+  "value": "new_value"
+}
+```
+
+### `POST /api/settings/reload`
+
+重载运行时配置。
+
+成功：
+
+```json
+{
+  "message": "配置已重新加载"
+}
+```
+
+### `POST /api/settings/test-udpxy`
+
+请求体：
+
+```json
+{
+  "url": "http://192.168.1.10:3680"
+}
+```
+
+成功响应示例：
+
+```json
+{
+  "success": true,
+  "message": "UDPxy 服务器连接成功",
+  "status_code": 200,
+  "tested_url": "http://192.168.1.10:3680/status",
+  "resolved_base_url": "http://192.168.1.10:3680"
+}
+```
+
+失败响应示例：
+
+```json
+{
+  "success": false,
+  "message": "无法连接到 UDPxy 服务器，请检查地址、端口和网络连通性",
+  "attempted_urls": [
+    "http://192.168.1.10:3680/status"
+  ]
+}
+```
+
+## 仪表盘接口 `/dashboard`
+
+### `GET /api/dashboard`
+
+返回频道、分组、协议分布、活跃连接与不健康频道列表。
+
+### `GET /api/dashboard/watch-stats?days=7`
+
+返回最近 N 天每日观看时长（秒）。
+
+### `GET /api/dashboard/channel-ranking?days=7&limit=10`
+
+返回观看排行（按总时长降序）。
+
+### `GET /api/dashboard/version`
+
+无需登录，返回版本信息：
+
+```json
+{
+  "version": "0.2.0",
+  "name": "IPTV Proxy Admin"
+}
+```
+
+## 健康检测接口 `/health`
+
+### `POST /api/health/check/{id}`
+
+检测单个频道。
+
+### `POST /api/health/check-all`
+
+检测所有启用频道。
+
+### `GET /api/health/status`
+
+返回总数、健康数、不健康数及不健康频道列表。
+
+## 代理接口 `/proxy`
+
+### `GET /api/proxy/stream/{id}?token=...`
+
+- 无需 Bearer
+- 需要订阅 token
+- 返回实际流媒体内容
+
+常见错误：
+
+- `401`：缺少或无效 token
+- `403`：频道被禁用
+- `404`：频道不存在
+- `500`：组播但 UDPxy 未配置 / 会话创建失败
+
+### `GET /api/proxy/status`
+
+需要 Bearer，返回当前活跃连接列表：
+
+```json
+{
+  "active_connections": 1,
+  "connections": [
+    {
+      "connection_id": "1_2_xxx",
+      "watch_record_id": 100,
+      "user_id": 1,
+      "username": "admin",
+      "channel_id": 2,
+      "channel_name": "CCTV-1",
+      "start_time": "2026-02-22T10:00:00Z",
+      "last_heartbeat": "2026-02-22T10:00:10Z"
+    }
+  ]
+}
+```
+
+## 订阅接口 `/subscription`
+
+### `GET /api/subscription/urls`
+
+需要 Bearer，返回当前用户订阅地址：
+
+```json
+{
+  "m3u_url": "http://host/api/subscription/m3u?token=...",
+  "txt_url": "http://host/api/subscription/txt?token=...",
+  "token": "..."
+}
+```
+
+### `GET /api/subscription/m3u?token=...`
+
+返回 M3U 文本（`audio/x-mpegurl`）。
+
+### `GET /api/subscription/txt?token=...`
+
+返回 TXT 文本（`text/plain`）。
+
+## 观看历史接口 `/history`
+
+### `GET /api/history/list?page=1&per_page=20`
+
+返回已结束且时长 `>= 5` 秒的历史记录分页。
+
+### `GET /api/history/stats`
+
+返回总记录数、最早记录时间、最新记录时间。
+
+### `POST /api/history/cleanup`
+
+清理“已结束”的历史记录（不会删除进行中的活跃连接记录）。
+
+## 导入导出接口 `/import-export`
+
+### `POST /api/import-export/import`
+
+两种方式：
+
+1. `multipart/form-data` 上传 `file`
+2. JSON 内容导入
+
+JSON 示例：
+
+```json
+{
+  "content": "...",
+  "format": "m3u",
+  "overwrite": false,
+  "auto_create_group": true,
+  "include_regex": "",
+  "exclude_regex": ""
+}
+```
+
+### `POST /api/import-export/import-url`
+
+```json
+{
+  "url": "http://example.com/list.m3u",
+  "overwrite": false,
+  "auto_create_group": true,
+  "format": "auto",
+  "include_regex": "",
+  "exclude_regex": ""
+}
+```
+
+### `GET /api/import-export/export?format=m3u|txt`
+
+返回导出文件流（需要 Bearer）。
+
+## 常见状态码
+
+- `200`：请求成功
+- `201`：资源创建成功
+- `400`：参数错误
+- `401`：未登录/令牌无效
+- `403`：无权限或需先改密
+- `404`：资源不存在
+- `500`：服务端错误

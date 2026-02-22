@@ -1,470 +1,233 @@
 # IPTV Proxy Admin 配置文档
 
-本文档详细说明 IPTV Proxy Admin 系统的所有配置选项。
+本文档说明当前版本的配置项、优先级与生效方式。
 
----
+## 配置来源与优先级
 
-## 配置文件
+系统配置有两层：
 
-配置通过环境变量加载，主要配置文件：
+1. 环境变量（`backend/.env`）
+2. 数据库设置（`settings` 表，通过 Web 界面写入）
 
-- **生产环境**: `backend/.env`
-- **配置模板**: `backend/.env.example`
+优先级：
 
----
-
-## ⚙️ Web 界面配置
-
-从 v1.2.0 开始，部分配置项支持在 Web 界面进行配置，无需编辑 `.env` 文件和重启服务。
-
-### 可在 Web 界面配置的项目
-
-| 配置项 | 位置 | 生效方式 |
-|--------|------|----------|
-| **UDPxy 配置** | 系统设置 > UDPxy 配置 | 立即生效 |
-| - UDPxy 启用开关 | | |
-| - UDPxy 服务地址 | | |
-| **健康检测配置** | 系统设置 > 健康检测配置 | 立即生效 |
-| - 检测超时时间 | | |
-| - 失败重试次数 | | |
-| - 检测线程数 | | |
-| **代理配置** | 系统设置 > 代理配置 | 立即生效 |
-| - 缓冲区大小 | | |
-
-### 配置优先级
-
-```
-数据库配置（Web 界面）> 环境变量配置（.env 文件）> 代码默认值
+```text
+数据库运行时配置 > .env 环境变量 > 代码默认值
 ```
 
-**说明：**
-- 如果在 Web 界面配置了某项，则优先使用 Web 界面的配置
-- 如果 Web 界面未配置，则使用 `.env` 文件中的默认值
-- 如果 `.env` 文件中也未配置，则使用代码中的默认值
-- Web 界面配置保存在数据库中，重启服务后仍然有效
+## 生效机制
 
-### 详细配置分类
+- 通过 Web 界面保存后，调用 `POST /api/settings/reload` 可立即刷新 Web 进程内运行时配置。
+- `history_worker_interval_seconds` 由独立 `history_worker.py` 调度器读取，修改后需重启 history-worker 才会使用新间隔。
+- 纯环境变量项（如数据库连接、JWT 密钥）需重启对应进程。
 
-**支持 Web 界面配置的项（数据库 > 环境变量）：**
-- ✅ **UDPxy 相关**: `UDPXY_ENABLED`, `UDPXY_URL`
-- ✅ **健康检测**: `HEALTH_CHECK_TIMEOUT`, `HEALTH_CHECK_MAX_RETRIES`, `HEALTH_CHECK_THREADS`
-- ✅ **代理配置**: `PROXY_BUFFER_SIZE`
+## 可在 Web 界面配置的运行时项
 
-**仅支持环境变量配置的项（需重启服务生效）：**
-- 🔧 **服务器**: `SERVER_HOST`, `SERVER_PORT`, `SERVER_DEBUG`
-- 🔧 **数据库**: `DATABASE_TYPE`, `DATABASE_PATH`, `MYSQL_*` 系列
-- 🔧 **认证（JWT）**: `JWT_*`
-- 🔧 **健康检测调度**: `HEALTH_CHECK_ENABLED`, `HEALTH_CHECK_INTERVAL`
-- 🔧 **观看历史**: `WATCH_HISTORY_SAVE_INTERVAL`
+对应 Settings 键名如下：
 
----
+| 键名 | 说明 | 默认值 | 生效方式 |
+|---|---|---|---|
+| `udpxy_enabled` | 是否启用 UDPxy 转发 | `false` | 立即生效 |
+| `udpxy_url` | UDPxy 地址 | `http://localhost:3680` | 立即生效 |
+| `proxy_buffer_size` | 流代理缓冲区（字节） | `8192` | 立即生效 |
+| `health_check_timeout` | 健康检测超时（秒） | `10` | 立即生效 |
+| `health_check_max_retries` | 健康检测重试次数 | `1` | 立即生效 |
+| `health_check_threads` | 健康检测线程数 | `3` | 立即生效 |
+| `heartbeat_interval_seconds` | 播放连接心跳上报间隔（秒） | `10` | 立即生效 |
+| `active_heartbeat_timeout_seconds` | 活跃连接心跳超时阈值（秒） | `45` | 立即生效 |
+| `history_worker_interval_seconds` | history-worker 调度间隔（秒） | `15` | 重启 history-worker 后生效 |
+| `site_name` | 站点显示名称 | `IPTV Proxy Admin` | 立即生效（前端重新拉取） |
+| `epg_url` | 订阅 M3U 的 EPG 地址 | 空 | 立即生效 |
+| `watch_history_retention_days` | 历史保留天数（用于策略配置） | `30` | 立即生效（不会自动删除历史） |
 
-## 环境变量配置
+## 环境变量配置（`backend/.env`）
 
-### 服务器配置
+下面是后端支持的环境变量。
 
-#### SERVER_HOST
-- **说明**: 服务器监听地址
-- **类型**: String
-- **默认值**: `0.0.0.0`
-- **示例**: `127.0.0.1` (仅本地访问) / `0.0.0.0` (允许外部访问)
+### 服务器
 
-#### SERVER_PORT
-- **说明**: 服务器监听端口
-- **类型**: Integer
-- **默认值**: `5000`
-- **示例**: `8000`
+#### `SERVER_HOST`
+- 默认值：`0.0.0.0`
+- 说明：服务监听地址。
 
-#### SERVER_DEBUG
-- **说明**: 是否启用调试模式
-- **类型**: Boolean
-- **默认值**: `false`
-- **示例**: `true` / `false`
-- **注意**: 生产环境必须设置为 `false`
+#### `SERVER_PORT`
+- 默认值：`5000`
+- 说明：服务监听端口。
 
----
+#### `SERVER_DEBUG`
+- 默认值：`false`（`.env.example` 中为 `true`，仅用于开发）
+- 说明：Flask 调试模式，生产必须为 `false`。
 
-### 数据库配置
+### 数据库
 
-#### DATABASE_TYPE
-- **说明**: 数据库类型
-- **类型**: String
-- **默认值**: `sqlite`
-- **可选值**: `sqlite` / `mysql`
-- **示例**: `mysql`
+#### `DATABASE_TYPE`
+- 默认值：`sqlite`
+- 可选值：`sqlite` / `mysql`
 
-#### DATABASE_PATH
-- **说明**: SQLite 数据库文件路径（仅当 DATABASE_TYPE=sqlite 时有效）
-- **类型**: String
-- **默认值**: `data/iptv.db`
-- **示例**: `/var/lib/iptv/iptv.db`
+#### `DATABASE_PATH`
+- 默认值：`data/iptv.db`（代码默认）
+- 模板值：`data/db.db`（`.env.example`）
+- 说明：当 `DATABASE_TYPE=sqlite` 时生效，相对路径基于 `backend/`。
 
-#### MYSQL_HOST
-- **说明**: MySQL 服务器地址（仅当 DATABASE_TYPE=mysql 时需要）
-- **类型**: String
-- **默认值**: `localhost`
-- **示例**: `192.168.1.100`
+#### `MYSQL_HOST`
+- 默认值：`localhost`
 
-#### MYSQL_PORT
-- **说明**: MySQL 服务器端口（仅当 DATABASE_TYPE=mysql 时需要）
-- **类型**: Integer
-- **默认值**: `3306`
-- **示例**: `3306`
+#### `MYSQL_PORT`
+- 默认值：`3306`
 
-#### MYSQL_USER
-- **说明**: MySQL 数据库用户名（仅当 DATABASE_TYPE=mysql 时需要）
-- **类型**: String
-- **默认值**: `root`
-- **示例**: `iptv_user`
+#### `MYSQL_USER`
+- 默认值：`root`
 
-#### MYSQL_PASSWORD
-- **说明**: MySQL 数据库密码（仅当 DATABASE_TYPE=mysql 时需要）
-- **类型**: String
-- **默认值**: `root`
-- **示例**: `your_secure_password`
+#### `MYSQL_PASSWORD`
+- 默认值：`root`
 
-#### MYSQL_DB
-- **说明**: MySQL 数据库名称（仅当 DATABASE_TYPE=mysql 时需要）
-- **类型**: String
-- **默认值**: `iptv`
-- **示例**: `iptv_production`
+#### `MYSQL_DB`
+- 默认值：`iptv`
 
----
+### JWT
 
-### JWT 认证配置
+#### `JWT_SECRET_KEY`
+- 默认值：`default-jwt-secret-key`
+- 说明：JWT 签名密钥，生产环境必须更换为强随机值。
 
-#### JWT_SECRET_KEY
-- **说明**: JWT 签名密钥（必须配置）
-- **类型**: String
-- **默认值**: `default-jwt-secret-key`
-- **示例**: `your-jwt-secret-key-change-in-production`
+#### `JWT_ALGORITHM`
+- 默认值：`HS256`
 
-#### JWT_ALGORITHM
-- **说明**: JWT 签名算法
-- **类型**: String
-- **默认值**: `HS256`
-- **示例**: `HS256`
+#### `JWT_ACCESS_EXPIRES_HOURS`
+- 默认值：`24`
 
-#### JWT_ACCESS_EXPIRES_HOURS
-- **说明**: Access Token 有效期（小时）
-- **类型**: Integer
-- **默认值**: `24`
-- **示例**: `24`
+#### `JWT_REFRESH_EXPIRES_DAYS`
+- 默认值：`7`
 
-#### JWT_REFRESH_EXPIRES_DAYS
-- **说明**: Refresh Token 有效期（天）
-- **类型**: Integer
-- **默认值**: `7`
-- **示例**: `7` / `30`
+### 健康检测调度
 
----
+#### `HEALTH_CHECK_ENABLED`
+- 默认值：`true`
+- 说明：是否启动 Web 进程内定时健康检测任务。
 
-### UDPxy 配置
+#### `HEALTH_CHECK_INTERVAL`
+- 默认值：`1800`
+- 说明：定时健康检测间隔（秒）。
 
-#### UDPXY_ENABLED ⚙️ 可在 Web 界面配置
-- **说明**: 是否启用 UDPxy 代理（用于组播转 HTTP）
-- **类型**: Boolean
-- **默认值**: `false`
-- **示例**: `true` / `false`
-- **配置位置**: 系统设置 > UDPxy 配置
-- **生效方式**: 立即生效，无需重启
+### UDPxy（环境变量回退值）
 
-#### UDPXY_URL ⚙️ 可在 Web 界面配置
-- **说明**: UDPxy 代理服务器地址
-- **类型**: String (URL)
-- **默认值**: `http://localhost:3680`
-- **示例**: `http://192.168.1.1:4022`
-- **注意**: 仅当 UDPXY_ENABLED=true 时生效
-- **配置位置**: 系统设置 > UDPxy 配置
-- **生效方式**: 立即生效，无需重启
+#### `UDPXY_ENABLED`
+- 默认值：`false`
 
----
+#### `UDPXY_URL`
+- 默认值：`http://localhost:3680`
 
-### 健康检测配置
+### 代理配置（环境变量回退值）
 
-#### HEALTH_CHECK_ENABLED
-- **说明**: 是否启用定时健康检测
-- **类型**: Boolean
-- **默认值**: `true`
-- **示例**: `true` / `false`
+#### `PROXY_BUFFER_SIZE`
+- 默认值：`8192`
 
-#### HEALTH_CHECK_INTERVAL
-- **说明**: 健康检测间隔时间（秒）
-- **类型**: Integer
-- **默认值**: `1800` (30分钟)
-- **示例**: `3600` (1小时) / `600` (10分钟)
-- **建议值**: 600-3600 秒之间
+### 健康检测运行参数（环境变量回退值）
 
-#### HEALTH_CHECK_TIMEOUT ⚙️ 可在 Web 界面配置
-- **说明**: 单个频道健康检测超时时间（秒）
-- **类型**: Integer
-- **默认值**: `10`
-- **示例**: `5` / `15`
-- **建议值**: 5-30 秒之间
-- **配置位置**: 系统设置 > 健康检测配置
-- **生效方式**: 立即生效，无需重启
+#### `HEALTH_CHECK_TIMEOUT`
+- 默认值：`10`
 
-#### HEALTH_CHECK_MAX_RETRIES ⚙️ 可在 Web 界面配置
-- **说明**: 健康检测失败后的重试次数
-- **类型**: Integer
-- **默认值**: `1`
-- **示例**: `2` / `3`
-- **说明**: 设置为 1 表示失败后重试 1 次（共检测 2 次）
-- **配置位置**: 系统设置 > 健康检测配置
-- **生效方式**: 立即生效，无需重启
+#### `HEALTH_CHECK_MAX_RETRIES`
+- 默认值：`1`
 
-#### HEALTH_CHECK_THREADS ⚙️ 可在 Web 界面配置
-- **说明**: 健康检测并发线程数
-- **类型**: Integer
-- **默认值**: `3`
-- **示例**: `5` / `1`
-- **范围**: 1-5
-- **说明**: 线程数越多，检测速度越快，但会增加系统负载
-- **建议值**: 3-5 线程
-- **配置位置**: 系统设置 > 健康检测配置
-- **生效方式**: 立即生效，无需重启
+#### `HEALTH_CHECK_THREADS`
+- 默认值：`3`
 
----
+### 观看会话与 worker
 
-### 代理配置
+#### `HEARTBEAT_INTERVAL_SECONDS`
+- 默认值：`10`
+- 说明：流代理上报心跳的周期（秒）。
 
-#### PROXY_BUFFER_SIZE ⚙️ 可在 Web 界面配置
-- **说明**: 代理流传输缓冲区大小（字节）
-- **类型**: Integer
-- **默认值**: `8192` (8KB)
-- **示例**: `16384` (16KB) / `4096` (4KB)
-- **建议值**: 4096-16384 之间
-- **配置位置**: 系统设置 > 代理配置
-- **生效方式**: 立即生效，无需重启
+#### `ACTIVE_HEARTBEAT_TIMEOUT_SECONDS`
+- 默认值：`45`
+- 说明：超过该阈值未收到心跳将视为僵尸连接并回收。
 
----
+#### `HISTORY_WORKER_INTERVAL_SECONDS`
+- 默认值：`15`
+- 说明：独立 `history_worker.py` 的调度周期。
 
-### 观看历史配置
+### Gunicorn
 
-#### WATCH_HISTORY_SAVE_INTERVAL
-- **说明**: 观看历史自动保存间隔（秒）
-- **类型**: Integer
-- **默认值**: `60` (1分钟)
-- **示例**: `30` / `120`
-- **说明**: 定期将活跃连接的观看时长保存到数据库
-- **建议值**: 30-300 秒之间
-- **注意**: 间隔越短，数据越准确，但数据库写入频率越高
-
----
+#### `GUNICORN_LOG_LEVEL`
+- 默认值：`info`
 
 ## 配置示例
 
-### 开发环境配置
+### 开发环境
 
 ```bash
-# Server Config
 SERVER_HOST=0.0.0.0
 SERVER_PORT=5000
 SERVER_DEBUG=true
 
-# Database Config
 DATABASE_TYPE=sqlite
-DATABASE_PATH=data/iptv.db
+DATABASE_PATH=data/db.db
 
-# JWT Config
 JWT_SECRET_KEY=dev-jwt-secret-key
 JWT_ALGORITHM=HS256
 JWT_ACCESS_EXPIRES_HOURS=24
 JWT_REFRESH_EXPIRES_DAYS=7
 
-# Health Check Config
 HEALTH_CHECK_ENABLED=true
 HEALTH_CHECK_INTERVAL=1800
 
-# Watch History Config
-WATCH_HISTORY_SAVE_INTERVAL=60
+HEARTBEAT_INTERVAL_SECONDS=10
+ACTIVE_HEARTBEAT_TIMEOUT_SECONDS=45
+HISTORY_WORKER_INTERVAL_SECONDS=15
 
-# 注意：以下配置项可在系统设置 Web 界面中配置，此处无需设置
-# - UDPXY_ENABLED / UDPXY_URL (UDPxy 配置)
-# - HEALTH_CHECK_TIMEOUT (健康检测超时)
-# - HEALTH_CHECK_MAX_RETRIES (健康检测重试次数)
-# - PROXY_BUFFER_SIZE (代理缓冲区大小)
+GUNICORN_LOG_LEVEL=info
 ```
 
-### 生产环境配置
+### 生产环境（MySQL）
 
 ```bash
-# Server Config
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8000
+SERVER_HOST=127.0.0.1
+SERVER_PORT=5000
 SERVER_DEBUG=false
 
-# Database Config
 DATABASE_TYPE=mysql
-MYSQL_HOST=localhost
+MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=iptv_user
-MYSQL_PASSWORD=your_secure_password_here
+MYSQL_PASSWORD=replace_with_strong_password
 MYSQL_DB=iptv_production
 
-# JWT Config
-JWT_SECRET_KEY=9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b
+JWT_SECRET_KEY=replace_with_random_32_bytes_or_more
 JWT_ALGORITHM=HS256
 JWT_ACCESS_EXPIRES_HOURS=24
 JWT_REFRESH_EXPIRES_DAYS=7
 
-# Health Check Config
 HEALTH_CHECK_ENABLED=true
-HEALTH_CHECK_INTERVAL=3600
+HEALTH_CHECK_INTERVAL=1800
 
-# Watch History Config
-WATCH_HISTORY_SAVE_INTERVAL=120
+HEARTBEAT_INTERVAL_SECONDS=10
+ACTIVE_HEARTBEAT_TIMEOUT_SECONDS=45
+HISTORY_WORKER_INTERVAL_SECONDS=15
 
-# 注意：以下配置项建议在系统设置 Web 界面中配置
-# - UDPXY_ENABLED / UDPXY_URL (UDPxy 配置)
-# - HEALTH_CHECK_TIMEOUT (健康检测超时)
-# - HEALTH_CHECK_MAX_RETRIES (健康检测重试次数)
-# - PROXY_BUFFER_SIZE (代理缓冲区大小)
+GUNICORN_LOG_LEVEL=info
 ```
 
----
+## 修改配置后的操作建议
 
-## 配置加载顺序
-
-1. 系统从 `backend/.env` 文件加载环境变量
-2. 如果某个变量未定义，使用默认值
-3. 配置在应用启动时加载一次，修改后需重启服务生效
-
----
-
-## 配置修改
-
-### 修改配置步骤
-
-1. 编辑 `backend/.env` 文件
-2. 修改需要变更的配置项
-3. 重启应用服务：
-   ```bash
-   # 开发环境
-   cd backend
-   source venv/bin/activate
-   python run.py
-
-   # 生产环境（Systemd）
-   sudo systemctl restart iptv-admin
-   ```
-
-### 验证配置
-
-启动应用后，查看日志确认配置是否正确加载：
-
-```bash
-# 查看应用日志
-tail -f backend/logs/app.log
-
-# 或查看 Systemd 日志
-sudo journalctl -u iptv-admin -f
-```
-
----
-
-## 数据库配置说明
-
-### SQLite vs MySQL
-
-| 特性 | SQLite | MySQL |
-|------|--------|-------|
-| **适用场景** | 开发测试、小规模部署 | 生产环境、大规模部署 |
-| **并发性能** | 低 | 高 |
-| **数据量** | < 10GB | > 10GB |
-| **备份恢复** | 简单（复制文件） | 需要 mysqldump |
-| **运维成本** | 低 | 中等 |
-
-### 切换数据库
-
-从 SQLite 切换到 MySQL：
-
-1. 创建 MySQL 数据库和用户
-2. 修改 `.env` 配置：
-   ```bash
-   DATABASE_TYPE=mysql
-   MYSQL_HOST=localhost
-   MYSQL_PORT=3306
-   MYSQL_USER=iptv_user
-   MYSQL_PASSWORD=your_password
-   MYSQL_DB=iptv_production
-   ```
-3. 重启应用（自动创建表结构）
-4. 如需迁移数据，使用导入导出功能
-
----
-
-## 性能调优建议
-
-### 健康检测优化
-
-- **小规模（< 50 频道）**: 间隔 1800 秒，超时 10 秒，重试 1 次
-- **中等规模（50-200 频道）**: 间隔 3600 秒，超时 15 秒，重试 2 次
-- **大规模（> 200 频道）**: 间隔 7200 秒，超时 20 秒，重试 1 次
-
-### 观看历史优化
-
-- **实时性要求高**: 保存间隔 30-60 秒
-- **平衡模式**: 保存间隔 60-120 秒
-- **性能优先**: 保存间隔 300 秒
-
-### 代理缓冲优化
-
-- **低延迟网络**: 4096-8192 字节
-- **普通网络**: 8192-16384 字节
-- **高带宽网络**: 16384-32768 字节
-
----
-
-## 安全建议
-
-1. **生产环境必须修改的配置：**
-   - `JWT_SECRET_KEY` - 使用随机密钥
-   - `SERVER_DEBUG` - 必须设置为 `false`
-   - 数据库密码 - 使用强密码
-
-2. **数据库安全：**
-   - MySQL 不要使用 root 用户
-   - 创建专用数据库用户并限制权限
-   - 定期备份数据库
-
-3. **网络安全：**
-   - 使用 Nginx 反向代理
-   - 配置 HTTPS（SSL/TLS）
-   - 限制管理后台访问 IP
-
----
+1. 修改了数据库/JWT/服务监听等环境变量：重启 Web 与 history-worker。
+2. 修改了 Web 设置中的运行时项：保存后执行“保存并应用”（前端已调用 `/api/settings/reload`）。
+3. 修改了 `history_worker_interval_seconds`：额外重启 history-worker 进程。
 
 ## 故障排查
 
-### 配置未生效
+### 配置看起来没生效
 
-1. 检查 `.env` 文件是否存在
-2. 检查环境变量语法是否正确（无空格、引号）
-3. 确认已重启服务
-4. 查看日志确认配置加载情况
+- 检查是否保存到了 `settings` 表（Web 设置页刷新确认）。
+- 检查是否已调用 `POST /api/settings/reload`。
+- 检查是否重启了 history-worker（仅针对 worker 调度间隔）。
 
 ### 数据库连接失败
 
-1. 检查 `DATABASE_TYPE` 配置
-2. SQLite: 检查文件路径和权限
-3. MySQL: 检查连接信息（主机、端口、用户名、密码）
-4. MySQL: 确认数据库已创建且用户有权限
+- SQLite：检查 `backend/data/` 目录权限。
+- MySQL：检查主机/端口/用户名/密码/库名是否可连接。
 
-### 健康检测不工作
+### 观看历史回收异常
 
-1. 检查 `HEALTH_CHECK_ENABLED=true`
-2. 查看日志是否有错误信息
-3. 检查频道 URL 是否可访问
-4. 调整超时和重试次数
-
----
-
-## 总结
-
-IPTV Proxy Admin 提供了灵活的配置选项，可以根据不同的部署环境和需求进行调整。建议：
-
-- 开发环境使用 SQLite + 默认配置
-- 生产环境使用 MySQL + 优化配置
-- 定期检查和备份配置文件
-- 根据实际负载调整性能参数
+- 检查 `history_worker.py` 是否运行。
+- 检查 `heartbeat_interval_seconds` 是否小于 `active_heartbeat_timeout_seconds`。
