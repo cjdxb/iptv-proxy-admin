@@ -114,6 +114,14 @@ source venv/bin/activate
 python history_worker.py
 ```
 
+终端 3（health-worker）：
+
+```bash
+cd /var/www/iptv-proxy-admin/backend
+source venv/bin/activate
+python health_worker.py
+```
+
 验证接口：
 
 ```bash
@@ -202,10 +210,11 @@ sudo systemctl reload nginx
 
 ## 6. 配置 systemd（推荐）
 
-生产建议至少 2 个服务：
+生产建议至少 3 个服务：
 
 - `iptv-proxy-admin-web.service`：Gunicorn Web/API
 - `iptv-proxy-admin-worker.service`：history-worker
+- `iptv-proxy-admin-health-worker.service`：health-worker
 
 ### 6.1 Web 服务
 
@@ -232,7 +241,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### 6.2 Worker 服务
+### 6.2 History Worker 服务
 
 ```bash
 sudo nano /etc/systemd/system/iptv-proxy-admin-worker.service
@@ -257,15 +266,42 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### 6.3 启动服务
+### 6.3 Health Worker 服务
+
+```bash
+sudo nano /etc/systemd/system/iptv-proxy-admin-health-worker.service
+```
+
+```ini
+[Unit]
+Description=IPTV Proxy Admin Health Worker Service
+After=network.target iptv-proxy-admin-web.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/iptv-proxy-admin/backend
+Environment="PATH=/var/www/iptv-proxy-admin/backend/venv/bin"
+ExecStart=/var/www/iptv-proxy-admin/backend/venv/bin/python health_worker.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 6.4 启动服务
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now iptv-proxy-admin-web
 sudo systemctl enable --now iptv-proxy-admin-worker
+sudo systemctl enable --now iptv-proxy-admin-health-worker
 
 sudo systemctl status iptv-proxy-admin-web
 sudo systemctl status iptv-proxy-admin-worker
+sudo systemctl status iptv-proxy-admin-health-worker
 ```
 
 日志查看：
@@ -273,6 +309,7 @@ sudo systemctl status iptv-proxy-admin-worker
 ```bash
 sudo journalctl -u iptv-proxy-admin-web -f
 sudo journalctl -u iptv-proxy-admin-worker -f
+sudo journalctl -u iptv-proxy-admin-health-worker -f
 ```
 
 ## 7. MySQL（可选）
@@ -303,11 +340,12 @@ MYSQL_PASSWORD=your_strong_password
 MYSQL_DB=iptv_production
 ```
 
-然后重启 Web 与 Worker：
+然后重启 Web 与两个 Worker：
 
 ```bash
 sudo systemctl restart iptv-proxy-admin-web
 sudo systemctl restart iptv-proxy-admin-worker
+sudo systemctl restart iptv-proxy-admin-health-worker
 ```
 
 ## 8. 部署后检查
@@ -316,7 +354,7 @@ sudo systemctl restart iptv-proxy-admin-worker
 - 登录默认账户：`admin / admin123`
 - 首次登录立即修改密码
 - 在“系统设置”验证 UDPxy、健康检测参数、观看会话参数
-- 检查活跃连接页面和历史记录是否正常刷新
+- 检查活跃连接/历史记录是否刷新，以及健康状态是否按周期更新
 
 ## 9. 更新应用
 

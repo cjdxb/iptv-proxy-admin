@@ -18,6 +18,7 @@
 ## 生效机制
 
 - 通过 Web 界面保存后，调用 `POST /api/settings/reload` 可立即刷新 Web 进程内运行时配置。
+- 独立 `health_worker.py` 每轮执行前会主动从数据库刷新健康检测运行参数（超时/重试/线程）。
 - `history_worker_interval_seconds` 由独立 `history_worker.py` 调度器读取，修改后需重启 history-worker 才会使用新间隔。
 - 纯环境变量项（如数据库连接、JWT 密钥）需重启对应进程。
 
@@ -103,11 +104,11 @@
 
 #### `HEALTH_CHECK_ENABLED`
 - 默认值：`true`
-- 说明：是否启动 Web 进程内定时健康检测任务。
+- 说明：是否启用独立 `health_worker.py` 的定时健康检测任务。
 
 #### `HEALTH_CHECK_INTERVAL`
 - 默认值：`1800`
-- 说明：定时健康检测间隔（秒）。
+- 说明：`health_worker.py` 的定时检测间隔（秒）。
 
 ### UDPxy（环境变量回退值）
 
@@ -210,9 +211,10 @@ GUNICORN_LOG_LEVEL=info
 
 ## 修改配置后的操作建议
 
-1. 修改了数据库/JWT/服务监听等环境变量：重启 Web 与 history-worker。
+1. 修改了数据库/JWT/服务监听等环境变量：重启 Web、history-worker、health-worker。
 2. 修改了 Web 设置中的运行时项：保存后执行“保存并应用”（前端已调用 `/api/settings/reload`）。
 3. 修改了 `history_worker_interval_seconds`：额外重启 history-worker 进程。
+4. 修改了 `HEALTH_CHECK_INTERVAL` 或 `HEALTH_CHECK_ENABLED`：额外重启 health-worker 进程。
 
 ## 故障排查
 
@@ -221,6 +223,11 @@ GUNICORN_LOG_LEVEL=info
 - 检查是否保存到了 `settings` 表（Web 设置页刷新确认）。
 - 检查是否已调用 `POST /api/settings/reload`。
 - 检查是否重启了 history-worker（仅针对 worker 调度间隔）。
+
+### 健康检测状态不更新
+
+- 检查 `health_worker.py` 是否运行。
+- 检查 `HEALTH_CHECK_ENABLED` 是否为 `true`。
 
 ### 数据库连接失败
 

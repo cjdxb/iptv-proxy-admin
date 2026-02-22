@@ -61,7 +61,9 @@ python run.py
 
 后端默认监听：`http://127.0.0.1:5000`
 
-### 3. 启动 history-worker（建议同时启动）
+### 3. 启动后台 worker（建议同时启动）
+
+终端 1（history-worker）：
 
 ```bash
 cd backend
@@ -69,11 +71,20 @@ source venv/bin/activate
 python history_worker.py
 ```
 
+终端 2（health-worker）：
+
+```bash
+cd backend
+source venv/bin/activate
+python health_worker.py
+```
+
 说明：
 
 - `run.py` 负责 API 与流代理
 - `history_worker.py` 负责活跃连接时长刷新与僵尸连接回收
-- 生产环境建议两个进程都常驻
+- `health_worker.py` 负责定时健康检测
+- 生产环境建议三个进程都常驻
 
 ### 4. 启动前端
 
@@ -176,6 +187,7 @@ iptv-proxy-admin/
 │   │   ├── utils/
 │   │   ├── config.py
 │   │   └── __init__.py
+│   ├── health_worker.py
 │   ├── history_worker.py
 │   ├── run.py
 │   ├── gunicorn.conf.py
@@ -220,7 +232,11 @@ iptv-proxy-admin/
 
 请确认 `history_worker.py` 进程正在运行。
 
-### 3. 修改配置后没有生效
+### 3. 健康检测状态长期不更新
+
+请确认 `health_worker.py` 进程正在运行。
+
+### 4. 修改配置后没有生效
 
 - Web 可热更新的配置：在“系统设置”保存后会立即生效（部分 worker 参数需重启 worker）
 - 仅环境变量配置项：修改 `.env` 后需要重启相关进程

@@ -7,7 +7,7 @@ IPTV Proxy Admin 启动入口
 from app import create_app
 from app.config import config
 
-app = create_app()
+app = create_app(start_background_services=False)
 
 if __name__ == '__main__':
     app.run(
