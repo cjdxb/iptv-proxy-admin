@@ -63,28 +63,19 @@ python run.py
 
 ### 3. 启动后台 worker（建议同时启动）
 
-终端 1（history-worker）：
+终端 1（unified-worker）：
 
 ```bash
 cd backend
 source venv/bin/activate
-python history_worker.py
-```
-
-终端 2（health-worker）：
-
-```bash
-cd backend
-source venv/bin/activate
-python health_worker.py
+python worker.py
 ```
 
 说明：
 
 - `run.py` 负责 API 与流代理
-- `history_worker.py` 负责活跃连接时长刷新与僵尸连接回收
-- `health_worker.py` 负责定时健康检测
-- 生产环境建议三个进程都常驻
+- `worker.py` 在一个独立进程内同时调度活跃连接时长刷新、僵尸连接回收与定时健康检测
+- 生产环境建议两个进程都常驻（`run.py` + `worker.py`）
 
 ### 4. 启动前端
 
@@ -183,12 +174,12 @@ iptv-proxy-admin/
 │   │   ├── services/
 │   │   │   ├── health_checker.py
 │   │   │   ├── import_export.py
+│   │   │   ├── unified_worker.py
 │   │   │   └── watch_history_saver.py
 │   │   ├── utils/
 │   │   ├── config.py
 │   │   └── __init__.py
-│   ├── health_worker.py
-│   ├── history_worker.py
+│   ├── worker.py
 │   ├── run.py
 │   ├── gunicorn.conf.py
 │   └── requirements.txt
@@ -230,11 +221,11 @@ iptv-proxy-admin/
 
 ### 2. 历史记录时长不更新或僵尸连接不回收
 
-请确认 `history_worker.py` 进程正在运行。
+请确认 `worker.py` 进程正在运行。
 
 ### 3. 健康检测状态长期不更新
 
-请确认 `health_worker.py` 进程正在运行。
+请确认 `worker.py` 进程正在运行。
 
 ### 4. 修改配置后没有生效
 

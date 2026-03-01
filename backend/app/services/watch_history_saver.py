@@ -4,7 +4,6 @@
 """
 
 from datetime import timedelta
-from apscheduler.schedulers.blocking import BlockingScheduler
 from loguru import logger
 from app import db
 from app.models.active_connection import ActiveConnection
@@ -196,65 +195,3 @@ def run_history_worker_cycle(timeout_seconds):
         'recycled': cleanup_result['recycled'],
         'recycled_finalized': cleanup_result['finalized']
     }
-
-
-def start_history_worker(app):
-    """启动独立 history-worker（阻塞运行）"""
-    from app.config import (
-        get_active_heartbeat_timeout_seconds,
-        get_history_worker_interval_seconds,
-        load_runtime_config_from_db
-    )
-
-    worker_interval = get_history_worker_interval_seconds()
-    startup_heartbeat_timeout = get_active_heartbeat_timeout_seconds()
-
-    scheduler = BlockingScheduler()
-
-    def job():
-        with app.app_context():
-            try:
-                # 独立 worker 进程需自行刷新运行时配置
-                load_runtime_config_from_db()
-                heartbeat_timeout = get_active_heartbeat_timeout_seconds()
-                result = run_history_worker_cycle(timeout_seconds=heartbeat_timeout)
-                if any(result.values()):
-                    logger.info(
-                        "history-worker执行完成: "
-                        f"时长更新={result['saved_updated']}, "
-                        f"清理无效活跃={result['saved_cleaned']}, "
-                        f"回收僵尸={result['recycled']}, "
-                        f"僵尸落历史={result['recycled_finalized']}"
-                    )
-            except Exception as e:
-                logger.error(f"history-worker执行失败: {e}")
-
-    # 启动后先执行一次，减少首次保存等待时间
-    job()
-
-    scheduler.add_job(
-        job,
-        'interval',
-        seconds=worker_interval,
-        id='history_worker',
-        name='历史记录worker',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True
-    )
-
-    logger.info(
-        "history-worker已启动: "
-        f"interval={worker_interval}s, heartbeat_timeout={startup_heartbeat_timeout}s"
-    )
-    scheduler.start()
-
-    return scheduler
-
-
-def start_watch_history_saver(app):
-    """
-    兼容旧入口（阶段B后建议使用独立 history_worker.py 启动）
-    """
-    logger.warning("start_watch_history_saver 已废弃，请改用独立 history-worker 进程")
-    return start_history_worker(app)

@@ -6,10 +6,8 @@
 import socket
 import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from apscheduler.schedulers.blocking import BlockingScheduler
 import requests
 from loguru import logger
-from app.config import config
 from app.utils.datetime_utils import to_utc_naive
 
 def _extract_rtp_udp_addr(url):
@@ -260,53 +258,3 @@ def check_all_channels():
 def run_health_worker_cycle():
     """执行一次健康检测 worker 周期。"""
     return check_all_channels()
-
-
-def _get_health_check_interval_seconds():
-    """读取健康检测间隔（秒）。"""
-    return max(1, int(config.get('health_check', {}).get('interval', 1800)))
-
-
-def start_health_worker(app):
-    """启动独立 health-worker（阻塞运行）。"""
-    from app.config import load_runtime_config_from_db
-
-    if not config.get('health_check', {}).get('enabled', True):
-        logger.warning("HEALTH_CHECK_ENABLED=false，health-worker 未启动")
-        return None
-
-    worker_interval = _get_health_check_interval_seconds()
-    blocking_scheduler = BlockingScheduler()
-
-    def job():
-        with app.app_context():
-            try:
-                # 独立 worker 进程需自行刷新运行时配置
-                load_runtime_config_from_db()
-                results = run_health_worker_cycle()
-                logger.info(
-                    "health-worker执行完成: "
-                    f"总计={results['total']}, "
-                    f"正常={results['healthy']}, "
-                    f"异常={results['unhealthy']}"
-                )
-            except Exception as e:
-                logger.error(f"health-worker执行失败: {e}")
-
-    # 启动后先执行一次，避免首次等待过长
-    job()
-
-    blocking_scheduler.add_job(
-        job,
-        'interval',
-        seconds=worker_interval,
-        id='health_worker',
-        name='健康检测worker',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True
-    )
-
-    logger.info(f"health-worker已启动: interval={worker_interval}s")
-    blocking_scheduler.start()
-    return blocking_scheduler

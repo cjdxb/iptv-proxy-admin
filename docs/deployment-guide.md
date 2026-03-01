@@ -106,20 +106,12 @@ source venv/bin/activate
 gunicorn -c gunicorn.conf.py run:app
 ```
 
-终端 2（history-worker）：
+终端 2（worker）：
 
 ```bash
 cd /var/www/iptv-proxy-admin/backend
 source venv/bin/activate
-python history_worker.py
-```
-
-终端 3（health-worker）：
-
-```bash
-cd /var/www/iptv-proxy-admin/backend
-source venv/bin/activate
-python health_worker.py
+python worker.py
 ```
 
 验证接口：
@@ -210,11 +202,10 @@ sudo systemctl reload nginx
 
 ## 6. 配置 systemd（推荐）
 
-生产建议至少 3 个服务：
+生产建议至少 2 个服务：
 
 - `iptv-proxy-admin-web.service`：Gunicorn Web/API
-- `iptv-proxy-admin-worker.service`：history-worker
-- `iptv-proxy-admin-health-worker.service`：health-worker
+- `iptv-proxy-admin-worker.service`：统一 worker（history + health）
 
 ### 6.1 Web 服务
 
@@ -241,7 +232,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### 6.2 History Worker 服务
+### 6.2 Unified Worker 服务
 
 ```bash
 sudo nano /etc/systemd/system/iptv-proxy-admin-worker.service
@@ -249,7 +240,7 @@ sudo nano /etc/systemd/system/iptv-proxy-admin-worker.service
 
 ```ini
 [Unit]
-Description=IPTV Proxy Admin History Worker Service
+Description=IPTV Proxy Admin Unified Worker Service
 After=network.target iptv-proxy-admin-web.service
 
 [Service]
@@ -258,7 +249,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/iptv-proxy-admin/backend
 Environment="PATH=/var/www/iptv-proxy-admin/backend/venv/bin"
-ExecStart=/var/www/iptv-proxy-admin/backend/venv/bin/python history_worker.py
+ExecStart=/var/www/iptv-proxy-admin/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
 
@@ -266,42 +257,15 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### 6.3 Health Worker 服务
-
-```bash
-sudo nano /etc/systemd/system/iptv-proxy-admin-health-worker.service
-```
-
-```ini
-[Unit]
-Description=IPTV Proxy Admin Health Worker Service
-After=network.target iptv-proxy-admin-web.service
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/iptv-proxy-admin/backend
-Environment="PATH=/var/www/iptv-proxy-admin/backend/venv/bin"
-ExecStart=/var/www/iptv-proxy-admin/backend/venv/bin/python health_worker.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 6.4 启动服务
+### 6.3 启动服务
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now iptv-proxy-admin-web
 sudo systemctl enable --now iptv-proxy-admin-worker
-sudo systemctl enable --now iptv-proxy-admin-health-worker
 
 sudo systemctl status iptv-proxy-admin-web
 sudo systemctl status iptv-proxy-admin-worker
-sudo systemctl status iptv-proxy-admin-health-worker
 ```
 
 日志查看：
@@ -309,7 +273,6 @@ sudo systemctl status iptv-proxy-admin-health-worker
 ```bash
 sudo journalctl -u iptv-proxy-admin-web -f
 sudo journalctl -u iptv-proxy-admin-worker -f
-sudo journalctl -u iptv-proxy-admin-health-worker -f
 ```
 
 ## 7. MySQL（可选）
@@ -340,12 +303,11 @@ MYSQL_PASSWORD=your_strong_password
 MYSQL_DB=iptv_production
 ```
 
-然后重启 Web 与两个 Worker：
+然后重启 Web 与 Worker：
 
 ```bash
 sudo systemctl restart iptv-proxy-admin-web
 sudo systemctl restart iptv-proxy-admin-worker
-sudo systemctl restart iptv-proxy-admin-health-worker
 ```
 
 ## 8. 部署后检查

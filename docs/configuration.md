@@ -18,8 +18,8 @@
 ## 生效机制
 
 - 通过 Web 界面保存后，调用 `POST /api/settings/reload` 可立即刷新 Web 进程内运行时配置。
-- 独立 `health_worker.py` 每轮执行前会主动从数据库刷新健康检测运行参数（超时/重试/线程）。
-- `history_worker_interval_seconds` 由独立 `history_worker.py` 调度器读取，修改后需重启 history-worker 才会使用新间隔。
+- 独立 `worker.py` 每轮执行前会主动从数据库刷新运行参数（健康检测超时/重试/线程、观看会话参数）。
+- `history_worker_interval_seconds` 由 `worker.py` 内的 history 调度器读取，修改后需重启 worker 才会使用新间隔。
 - 纯环境变量项（如数据库连接、JWT 密钥）需重启对应进程。
 
 ## 可在 Web 界面配置的运行时项
@@ -36,7 +36,7 @@
 | `health_check_threads` | 健康检测线程数 | `3` | 立即生效 |
 | `heartbeat_interval_seconds` | 播放连接心跳上报间隔（秒） | `10` | 立即生效 |
 | `active_heartbeat_timeout_seconds` | 活跃连接心跳超时阈值（秒） | `45` | 立即生效 |
-| `history_worker_interval_seconds` | history-worker 调度间隔（秒） | `15` | 重启 history-worker 后生效 |
+| `history_worker_interval_seconds` | history-worker 调度间隔（秒） | `15` | 重启 worker 后生效 |
 | `site_name` | 站点显示名称 | `IPTV Proxy Admin` | 立即生效（前端重新拉取） |
 | `epg_url` | 订阅 M3U 的 EPG 地址 | 空 | 立即生效 |
 | `watch_history_retention_days` | 历史保留天数（用于策略配置） | `30` | 立即生效（不会自动删除历史） |
@@ -104,11 +104,11 @@
 
 #### `HEALTH_CHECK_ENABLED`
 - 默认值：`true`
-- 说明：是否启用独立 `health_worker.py` 的定时健康检测任务。
+- 说明：是否启用 `worker.py` 内的健康检测定时任务。
 
 #### `HEALTH_CHECK_INTERVAL`
 - 默认值：`1800`
-- 说明：`health_worker.py` 的定时检测间隔（秒）。
+- 说明：`worker.py` 内健康检测任务的执行间隔（秒）。
 
 ### UDPxy（环境变量回退值）
 
@@ -146,7 +146,7 @@
 
 #### `HISTORY_WORKER_INTERVAL_SECONDS`
 - 默认值：`15`
-- 说明：独立 `history_worker.py` 的调度周期。
+- 说明：`worker.py` 内 history 任务的调度周期。
 
 ### Gunicorn
 
@@ -211,10 +211,10 @@ GUNICORN_LOG_LEVEL=info
 
 ## 修改配置后的操作建议
 
-1. 修改了数据库/JWT/服务监听等环境变量：重启 Web、history-worker、health-worker。
+1. 修改了数据库/JWT/服务监听等环境变量：重启 Web、worker。
 2. 修改了 Web 设置中的运行时项：保存后执行“保存并应用”（前端已调用 `/api/settings/reload`）。
-3. 修改了 `history_worker_interval_seconds`：额外重启 history-worker 进程。
-4. 修改了 `HEALTH_CHECK_INTERVAL` 或 `HEALTH_CHECK_ENABLED`：额外重启 health-worker 进程。
+3. 修改了 `history_worker_interval_seconds`：额外重启 worker 进程。
+4. 修改了 `HEALTH_CHECK_INTERVAL` 或 `HEALTH_CHECK_ENABLED`：额外重启 worker 进程。
 
 ## 故障排查
 
@@ -222,11 +222,11 @@ GUNICORN_LOG_LEVEL=info
 
 - 检查是否保存到了 `settings` 表（Web 设置页刷新确认）。
 - 检查是否已调用 `POST /api/settings/reload`。
-- 检查是否重启了 history-worker（仅针对 worker 调度间隔）。
+- 检查是否重启了 worker（仅针对 worker 调度间隔）。
 
 ### 健康检测状态不更新
 
-- 检查 `health_worker.py` 是否运行。
+- 检查 `worker.py` 是否运行。
 - 检查 `HEALTH_CHECK_ENABLED` 是否为 `true`。
 
 ### 数据库连接失败
@@ -236,5 +236,5 @@ GUNICORN_LOG_LEVEL=info
 
 ### 观看历史回收异常
 
-- 检查 `history_worker.py` 是否运行。
+- 检查 `worker.py` 是否运行。
 - 检查 `heartbeat_interval_seconds` 是否小于 `active_heartbeat_timeout_seconds`。
