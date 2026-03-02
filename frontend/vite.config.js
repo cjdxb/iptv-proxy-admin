@@ -20,19 +20,24 @@ export default defineConfig(({ mode }) => {
               return
             }
 
-            if (
-              id.includes('/echarts/') ||
-              id.includes('/zrender/') ||
-              id.includes('/vue-echarts/')
-            ) {
-              return 'echarts'
+            if (id.includes('/@element-plus/icons-vue/')) {
+              return 'el-icons'
             }
 
-            if (
-              id.includes('/element-plus/') ||
-              id.includes('/@element-plus/icons-vue/')
-            ) {
+            if (id.includes('/element-plus/')) {
               return 'element-plus'
+            }
+
+            if (id.includes('/vue-echarts/')) {
+              return 'vue-echarts'
+            }
+
+            if (id.includes('/zrender/')) {
+              return 'zrender'
+            }
+
+            if (id.includes('/echarts/')) {
+              return 'echarts'
             }
 
             if (
