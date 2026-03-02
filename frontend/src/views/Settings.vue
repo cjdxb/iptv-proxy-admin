@@ -250,7 +250,7 @@
             show-icon
           >
             <template #title>
-              💡 心跳间隔与超时阈值可立即生效；Worker 扫描间隔需重启 history-worker 生效
+              💡 心跳间隔与超时阈值可立即生效；Worker 扫描间隔需重启 worker 生效
             </template>
           </el-alert>
         </el-form>
