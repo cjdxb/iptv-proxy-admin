@@ -300,7 +300,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Upload, Download, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import api from '@/api'
 
 // 数据

@@ -89,6 +89,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Delete, Edit } from '@element-plus/icons-vue'
 import api from '@/api'
 
 const groups = ref([])

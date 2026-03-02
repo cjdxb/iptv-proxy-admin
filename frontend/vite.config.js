@@ -12,6 +12,42 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version)
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return
+            }
+
+            if (
+              id.includes('/echarts/') ||
+              id.includes('/zrender/') ||
+              id.includes('/vue-echarts/')
+            ) {
+              return 'echarts'
+            }
+
+            if (
+              id.includes('/element-plus/') ||
+              id.includes('/@element-plus/icons-vue/')
+            ) {
+              return 'element-plus'
+            }
+
+            if (
+              id.includes('/vue/') ||
+              id.includes('/vue-router/') ||
+              id.includes('/pinia/')
+            ) {
+              return 'vue-vendor'
+            }
+
+            return 'vendor'
+          }
+        }
+      }
+    },
     server: {
       port: 3000,
       proxy: {
