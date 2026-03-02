@@ -6,7 +6,6 @@
 from flask import Blueprint, request, jsonify, Response
 from app.models.users import Users
 from app.models.channel import Channel
-from app.models.channel_group import ChannelGroup
 from app.models.settings import Settings
 from app.utils.auth import login_required, get_current_user
 
@@ -17,6 +16,11 @@ def get_stream_url(channel_id, token, request_obj):
     """生成流代理 URL"""
     host = request_obj.host_url.rstrip('/')
     return f"{host}/api/proxy/stream/{channel_id}?token={token}"
+
+
+def get_sorted_active_channels():
+    """按频道排序字段获取启用频道（与频道管理列表保持一致）"""
+    return Channel.query.filter_by(is_active=True).order_by(Channel.sort_order, Channel.id).all()
 
 
 @bp.route('/m3u', methods=['GET'])
@@ -41,26 +45,14 @@ def get_m3u():
     else:
         lines.append('#EXTM3U')
     
-    # 按分组获取频道
-    groups = ChannelGroup.query.order_by(ChannelGroup.sort_order).all()
-    ungrouped_channels = Channel.query.filter_by(group_id=None, is_active=True).order_by(Channel.sort_order).all()
-    
-    # 先输出有分组的频道
-    for group in groups:
-        channels = Channel.query.filter_by(group_id=group.id, is_active=True).order_by(Channel.sort_order).all()
-        for channel in channels:
-            stream_url = get_stream_url(channel.id, token, request)
-            tvg_id_part = f' tvg-id="{channel.tvg_id}"' if channel.tvg_id else ''
-            logo_part = f' tvg-logo="{channel.logo}"' if channel.logo else ''
-            lines.append(f'#EXTINF:-1{tvg_id_part} tvg-name="{channel.name}"{logo_part} group-title="{group.name}",{channel.name}')
-            lines.append(stream_url)
-    
-    # 输出未分组的频道
-    for channel in ungrouped_channels:
+    # 按频道排序顺序输出，避免被分组循环打乱
+    channels = get_sorted_active_channels()
+    for channel in channels:
         stream_url = get_stream_url(channel.id, token, request)
         tvg_id_part = f' tvg-id="{channel.tvg_id}"' if channel.tvg_id else ''
         logo_part = f' tvg-logo="{channel.logo}"' if channel.logo else ''
-        lines.append(f'#EXTINF:-1{tvg_id_part} tvg-name="{channel.name}"{logo_part},{channel.name}')
+        group_part = f' group-title="{channel.group.name}"' if channel.group else ''
+        lines.append(f'#EXTINF:-1{tvg_id_part} tvg-name="{channel.name}"{logo_part}{group_part},{channel.name}')
         lines.append(stream_url)
     
     content = '\n'.join(lines)
@@ -88,25 +80,17 @@ def get_txt():
     
     lines = []
     
-    # 按分组获取频道
-    groups = ChannelGroup.query.order_by(ChannelGroup.sort_order).all()
-    ungrouped_channels = Channel.query.filter_by(group_id=None, is_active=True).order_by(Channel.sort_order).all()
-    
-    # 先输出有分组的频道
-    for group in groups:
-        channels = Channel.query.filter_by(group_id=group.id, is_active=True).order_by(Channel.sort_order).all()
-        if channels:
-            lines.append(f'{group.name},#genre#')
-            for channel in channels:
-                stream_url = get_stream_url(channel.id, token, request)
-                lines.append(f'{channel.name},{stream_url}')
-    
-    # 输出未分组的频道
-    if ungrouped_channels:
-        lines.append('未分组,#genre#')
-        for channel in ungrouped_channels:
-            stream_url = get_stream_url(channel.id, token, request)
-            lines.append(f'{channel.name},{stream_url}')
+    channels = get_sorted_active_channels()
+
+    current_group_name = None
+    for channel in channels:
+        group_name = channel.group.name if channel.group else '未分组'
+        if group_name != current_group_name:
+            lines.append(f'{group_name},#genre#')
+            current_group_name = group_name
+
+        stream_url = get_stream_url(channel.id, token, request)
+        lines.append(f'{channel.name},{stream_url}')
     
     content = '\n'.join(lines)
     
