@@ -10,7 +10,7 @@ from flask_cors import CORS
 from sqlalchemy import inspect, text
 from loguru import logger
 
-from .config import config
+from .config import load_config
 
 db = SQLAlchemy()
 
@@ -87,12 +87,13 @@ def _drop_mysql_foreign_keys():
 def create_app():
     """创建并配置 Flask 应用"""
     app = Flask(__name__)
+    app_config = load_config()
     
     # 基础配置
-    app.config['SECRET_KEY'] = config.get('jwt', {}).get('secret_key', 'default-jwt-secret-key')
+    app.config['SECRET_KEY'] = app_config.get('jwt', {}).get('secret_key', 'default-jwt-secret-key')
     
     # 数据库配置
-    db_config = config.get('database', {})
+    db_config = app_config.get('database', {})
     db_type = db_config.get('type', 'sqlite')
     
     if db_type == 'mysql':
