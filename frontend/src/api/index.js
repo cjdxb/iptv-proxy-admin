@@ -38,6 +38,19 @@ function shouldSkipRefresh(url = '') {
     return url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout')
 }
 
+function isBusinessUnauthorized(status, url = '', errorData = {}) {
+    if (status !== 401) {
+        return false
+    }
+
+    // 修改密码时“原密码错误”属于业务校验，不应触发登录态清理
+    if (url.includes('/auth/change-password')) {
+        return errorData.code === 'invalid_old_password' || errorData.error === '原密码错误'
+    }
+
+    return false
+}
+
 // 请求拦截器（自动添加 access token）
 http.interceptors.request.use(
     config => {
@@ -56,11 +69,12 @@ http.interceptors.response.use(
     response => response,
     async error => {
         const status = error.response?.status
+        const errorData = error.response?.data || {}
         const originalRequest = error.config || {}
         const requestUrl = originalRequest.url || ''
         const authStore = useAuthStore()
 
-        if (status === 403 && error.response?.data?.code === 'must_change_password') {
+        if (status === 403 && errorData.code === 'must_change_password') {
             authStore.setAuthData({
                 user: {
                     ...(authStore.user || {}),
@@ -77,6 +91,10 @@ http.interceptors.response.use(
 
         // 登录失败本身不触发刷新
         if (requestUrl.includes('/auth/login')) {
+            return Promise.reject(error)
+        }
+
+        if (isBusinessUnauthorized(status, requestUrl, errorData)) {
             return Promise.reject(error)
         }
 

@@ -175,7 +175,7 @@ def change_password():
         return jsonify({'error': '请提供原密码和新密码'}), 400
     
     if not user.check_password(old_password):
-        return jsonify({'error': '原密码错误'}), 401
+        return jsonify({'error': '原密码错误', 'code': 'invalid_old_password'}), 401
     
     if len(new_password) < 6:
         return jsonify({'error': '新密码长度不能少于6位'}), 400
