@@ -112,13 +112,16 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
           <el-button link type="success" @click="checkSingleChannel(row)" :loading="row._checking">
             检测
           </el-button>
           <el-button link type="primary" @click="openChannelDialog(row)">
             编辑
+          </el-button>
+          <el-button link type="primary" @click="openPreview(row)">
+            预览
           </el-button>
           <el-button link type="danger" @click="deleteChannel(row)">
             删除
@@ -199,6 +202,34 @@
         <el-button @click="channelDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="saveChannel" :loading="saving">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 频道预览对话框 -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewChannel ? `预览：${previewChannel.name}` : '频道预览'"
+      width="800px"
+      destroy-on-close
+      @close="stopPreview"
+    >
+      <div class="preview-player">
+        <video
+          ref="previewVideoRef"
+          class="preview-video"
+          controls
+          autoplay
+          playsinline
+        />
+        <div v-if="previewLoading" class="preview-status">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          正在加载频道…
+        </div>
+        <el-empty
+          v-else-if="previewError"
+          :description="previewError"
+          :image-size="80"
+        />
+      </div>
     </el-dialog>
     
     <!-- 导入对话框 -->
@@ -298,10 +329,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Upload, Download, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
+import { Search, Upload, Download, Plus, Refresh, VideoPlay, Loading } from '@element-plus/icons-vue'
+import mpegts from 'mpegts.js'
 import api from '@/api'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
 
 // 数据
 const channels = ref([])
@@ -310,6 +345,14 @@ const loading = ref(false)
 const saving = ref(false)
 const healthCheckLoading = ref(false)
 const selectedChannels = ref([])
+
+// 频道预览
+const previewDialogVisible = ref(false)
+const previewChannel = ref(null)
+const previewVideoRef = ref()
+const previewLoading = ref(false)
+const previewError = ref('')
+let previewPlayer = null
 
 // 筛选
 const filters = reactive({
@@ -507,6 +550,73 @@ function handleSelectionChange(selection) {
   selectedChannels.value = selection
 }
 
+// 打开频道预览
+async function openPreview(channel) {
+  stopPreview()
+  previewChannel.value = channel
+  previewDialogVisible.value = true
+  previewLoading.value = true
+  previewError.value = ''
+
+  await nextTick()
+
+  if (!mpegts.isSupported()) {
+    previewLoading.value = false
+    previewError.value = '当前浏览器不支持该视频格式，请使用最新版 Chrome、Edge 或 Firefox'
+    return
+  }
+
+  const token = authStore.user?.token
+  if (!token) {
+    previewLoading.value = false
+    previewError.value = '未获取到播放 Token，请重新登录后再试'
+    return
+  }
+
+  previewPlayer = mpegts.createPlayer({
+    type: 'mpegts',
+    isLive: true,
+    url: `/api/proxy/stream/${channel.id}?token=${encodeURIComponent(token)}`
+  })
+
+  previewPlayer.attachMediaElement(previewVideoRef.value)
+  previewPlayer.on(mpegts.Events.ERROR, () => {
+    previewLoading.value = false
+    previewError.value = channel.is_active
+      ? '频道加载失败，请检查频道状态或播放源格式'
+      : '该频道未启用，无法预览'
+  })
+  previewVideoRef.value.addEventListener('playing', () => {
+    previewLoading.value = false
+  }, { once: true })
+
+  try {
+    previewPlayer.load()
+    await previewPlayer.play()
+  } catch (error) {
+    previewLoading.value = false
+    ElMessage.warning('自动播放失败，请点击播放器中的播放按钮')
+  }
+}
+
+// 停止预览并释放流连接
+function stopPreview() {
+  if (previewPlayer) {
+    previewPlayer.pause()
+    previewPlayer.unload()
+    previewPlayer.detachMediaElement()
+    previewPlayer.destroy()
+    previewPlayer = null
+  }
+
+  if (previewVideoRef.value) {
+    previewVideoRef.value.removeAttribute('src')
+    previewVideoRef.value.load()
+  }
+
+  previewLoading.value = false
+}
+
 // 协议类型样式
 function getProtocolType(protocol) {
   const types = {
@@ -657,6 +767,8 @@ onMounted(() => {
   fetchChannels()
   fetchGroups()
 })
+
+onBeforeUnmount(stopPreview)
 </script>
 
 <style scoped>
@@ -754,5 +866,52 @@ onMounted(() => {
   margin-left: 12px;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.preview-player {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  overflow: hidden;
+  background: #000;
+  border-radius: 8px;
+}
+
+.preview-video {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.preview-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgb(0 0 0 / 45%);
+}
+
+.preview-player :deep(.el-empty) {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  background: #000;
+}
+
+.preview-player :deep(.el-empty__description p) {
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .preview-player {
+    min-height: 220px;
+  }
 }
 </style>
