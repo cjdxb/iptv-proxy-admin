@@ -212,13 +212,13 @@
       destroy-on-close
       @close="stopPreview"
     >
-      <div class="preview-player">
+      <div ref="previewContainerRef" class="preview-player">
         <video
           ref="previewVideoRef"
           class="preview-video"
-          controls
           autoplay
           playsinline
+          @playing="handlePreviewPlaying"
         />
         <div v-if="previewLoading" class="preview-status">
           <el-icon class="is-loading"><Loading /></el-icon>
@@ -229,6 +229,24 @@
           :description="previewError"
           :image-size="80"
         />
+        <div v-else-if="!previewLoading" class="preview-controls">
+          <button
+            type="button"
+            class="preview-control-button"
+            :title="previewMuted ? '取消静音' : '静音'"
+            @click="togglePreviewMute"
+          >
+            <el-icon><Mute v-if="previewMuted" /><Microphone v-else /></el-icon>
+          </button>
+          <button
+            type="button"
+            class="preview-control-button preview-fullscreen-button"
+            title="全屏"
+            @click="openPreviewFullscreen"
+          >
+            <el-icon><FullScreen /></el-icon>
+          </button>
+        </div>
       </div>
     </el-dialog>
     
@@ -331,7 +349,18 @@
 <script setup>
 import { ref, reactive, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Upload, Download, Plus, Refresh, VideoPlay, Loading } from '@element-plus/icons-vue'
+import {
+  Search,
+  Upload,
+  Download,
+  Plus,
+  Refresh,
+  VideoPlay,
+  Loading,
+  Mute,
+  Microphone,
+  FullScreen
+} from '@element-plus/icons-vue'
 import mpegts from 'mpegts.js'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
@@ -349,9 +378,11 @@ const selectedChannels = ref([])
 // 频道预览
 const previewDialogVisible = ref(false)
 const previewChannel = ref(null)
+const previewContainerRef = ref()
 const previewVideoRef = ref()
 const previewLoading = ref(false)
 const previewError = ref('')
+const previewMuted = ref(false)
 let previewPlayer = null
 
 // 筛选
@@ -557,6 +588,7 @@ async function openPreview(channel) {
   previewDialogVisible.value = true
   previewLoading.value = true
   previewError.value = ''
+  previewMuted.value = false
 
   await nextTick()
 
@@ -586,16 +618,42 @@ async function openPreview(channel) {
       ? '频道加载失败，请检查频道状态或播放源格式'
       : '该频道未启用，无法预览'
   })
-  previewVideoRef.value.addEventListener('playing', () => {
-    previewLoading.value = false
-  }, { once: true })
-
   try {
     previewPlayer.load()
     await previewPlayer.play()
   } catch (error) {
-    previewLoading.value = false
-    ElMessage.warning('自动播放失败，请点击播放器中的播放按钮')
+    try {
+      previewVideoRef.value.muted = true
+      previewMuted.value = true
+      await previewPlayer.play()
+    } catch (mutedPlayError) {
+      previewLoading.value = false
+      previewError.value = '自动播放失败，请允许浏览器自动播放后重试'
+    }
+  }
+}
+
+function handlePreviewPlaying() {
+  previewLoading.value = false
+}
+
+function togglePreviewMute() {
+  if (!previewVideoRef.value) return
+
+  previewVideoRef.value.muted = !previewVideoRef.value.muted
+  previewMuted.value = previewVideoRef.value.muted
+}
+
+async function openPreviewFullscreen() {
+  if (!previewContainerRef.value?.requestFullscreen) {
+    ElMessage.warning('当前浏览器不支持全屏播放')
+    return
+  }
+
+  try {
+    await previewContainerRef.value.requestFullscreen()
+  } catch (error) {
+    ElMessage.warning('无法进入全屏模式')
   }
 }
 
@@ -615,6 +673,7 @@ function stopPreview() {
   }
 
   previewLoading.value = false
+  previewMuted.value = false
 }
 
 // 协议类型样式
@@ -896,6 +955,44 @@ onBeforeUnmount(stopPreview)
   justify-content: center;
   color: #fff;
   background: rgb(0 0 0 / 45%);
+}
+
+.preview-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 28px 12px 10px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 75%));
+}
+
+.preview-control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+
+.preview-control-button:hover {
+  background: rgb(255 255 255 / 18%);
+}
+
+.preview-control-button .el-icon {
+  font-size: 22px;
+}
+
+.preview-fullscreen-button {
+  margin-left: auto;
 }
 
 .preview-player :deep(.el-empty) {
