@@ -5,7 +5,8 @@
 
 import requests
 import uuid
-from flask import Blueprint, request, jsonify, Response, stream_with_context
+from itsdangerous import BadSignature
+from flask import Blueprint, request, jsonify, Response, stream_with_context, redirect, url_for
 from loguru import logger
 from sqlalchemy import select
 from app import db
@@ -17,6 +18,7 @@ from app.config import get_heartbeat_interval_seconds
 from app.utils.auth import login_required
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 from app.services.watch_history_saver import update_connection_heartbeat, close_active_connection
+from app.services.hls import is_hls_response, resource_signer, rewrite_playlist
 
 bp = Blueprint('proxy', __name__, url_prefix='/api/proxy')
 
@@ -76,34 +78,95 @@ def stream_channel(channel_id):
             logger.info(f"组播源转换: {channel.url} -> {stream_url}")
         else:
             return jsonify({'error': 'UDPxy 未配置，无法播放组播源'}), 500
-    else:
-        logger.debug(f"HTTP 源: {stream_url}")
+    resource = request.args.get('resource')
+    resource_data = None
+    if resource:
+        try:
+            resource_data = resource_signer().loads(resource)
+            if resource_data['channel_id'] != channel_id or resource_data['user_id'] != user.id:
+                raise BadSignature('resource mismatch')
+            stream_url = resource_data['url']
+        except (BadSignature, KeyError, TypeError):
+            return jsonify({'error': 'HLS 资源签名无效'}), 403
+
+    # 在发送响应头、创建观看记录之前发起 GET；不使用上游可能拒绝的 HEAD。
+    upstream = None
+    try:
+        headers = {}
+        if request.headers.get('Range'):
+            headers['Range'] = request.headers['Range']
+        upstream = requests.get(stream_url, stream=True, timeout=(10, 30), headers=headers)
+        if upstream.status_code not in (200, 206):
+            status = upstream.status_code
+            upstream.close()
+            logger.warning(f'频道 {channel_id} 上游 GET 失败: HTTP {status}')
+            return jsonify({'error': f'播放源返回 HTTP {status}', 'upstream_status': status}), 502
+        hls = is_hls_response(upstream)
+        playlist = None
+        if hls:
+            # 清单有限大小；分片和连续 TS 流仍采用流式转发。
+            content = bytearray()
+            for chunk in upstream.iter_content(chunk_size=8192):
+                content.extend(chunk)
+                if len(content) > 2 * 1024 * 1024:
+                    upstream.close()
+                    return jsonify({'error': 'HLS 清单过大'}), 502
+            playlist = content.decode('utf-8-sig')
+            upstream.close()
+            if not playlist.lstrip().startswith('#EXTM3U'):
+                return jsonify({'error': '播放源未返回有效的 HLS 清单'}), 502
+    except (requests.RequestException, UnicodeError) as e:
+        if upstream is not None:
+            upstream.close()
+        logger.warning(f'频道 {channel_id} 上游请求失败: {type(e).__name__}')
+        return jsonify({'error': '播放源连接失败或响应无效'}), 502
     
     # 创建观看记录 + 活跃连接（同事务）
-    connection_id = f"{user.id}_{channel_id}_{uuid.uuid4().hex}"
+    connection_id = (resource_data['connection_id'] if resource_data
+                     else f"{user.id}_{channel_id}_{uuid.uuid4().hex}")
     start_time_utc = to_utc_naive()
     watch_record_id = None
 
     try:
-        watch_record = WatchHistory(user_id=user.id, channel_id=channel.id, start_time=start_time_utc)
-        db.session.add(watch_record)
-        db.session.flush()
-        watch_record_id = watch_record.id
+        if resource_data:
+            update_connection_heartbeat(connection_id, heartbeat_time=start_time_utc)
+        else:
+            watch_record = WatchHistory(user_id=user.id, channel_id=channel.id, start_time=start_time_utc)
+            db.session.add(watch_record)
+            db.session.flush()
+            watch_record_id = watch_record.id
 
-        active_connection = ActiveConnection(
-            connection_id=connection_id,
-            watch_history_id=watch_record_id,
-            user_id=user.id,
-            channel_id=channel.id,
-            start_time=start_time_utc,
-            last_heartbeat=start_time_utc
-        )
-        db.session.add(active_connection)
-        db.session.commit()
+            active_connection = ActiveConnection(
+                connection_id=connection_id,
+                watch_history_id=watch_record_id,
+                user_id=user.id,
+                channel_id=channel.id,
+                start_time=start_time_utc,
+                last_heartbeat=start_time_utc
+            )
+            db.session.add(active_connection)
+            db.session.commit()
     except Exception as e:
+        upstream.close()
         db.session.rollback()
         logger.error(f"创建活跃连接失败: user_id={user.id}, channel_id={channel.id}, error={e}")
         return jsonify({'error': '创建观看会话失败'}), 500
+
+    if hls:
+        if not resource_data:
+            # 固定本次播放的清单 URL，直播清单刷新时复用同一观看会话。
+            signed = resource_signer().dumps({
+                'url': upstream.url, 'channel_id': channel_id, 'user_id': user.id,
+                'connection_id': connection_id,
+            })
+            response = redirect(url_for('proxy.stream_channel', channel_id=channel_id,
+                                        token=token, resource=signed), code=302)
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+        body = rewrite_playlist(playlist, upstream.url, channel_id, user.id, token, connection_id)
+        # HLS 是多个短请求，靠子资源请求续心跳，由 worker 回收停止播放的会话。
+        return Response(body, content_type='application/vnd.apple.mpegurl',
+                        headers={'Cache-Control': 'no-store'})
 
     username = user.username
     channel_name = channel.name
@@ -117,55 +180,55 @@ def stream_channel(channel_id):
             from app.config import get_proxy_buffer_size
             buffer_size = get_proxy_buffer_size()
 
-            with requests.get(stream_url, stream=True, timeout=30) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=buffer_size):
+            with upstream as r:
+                # read1 返回当前可用数据，不像 iter_content/read 等待凑满缓冲区。
+                # 使用 urllib3 的公开接口，保留 chunked 解帧和内容解压。
+                while True:
+                    chunk = r.raw.read1(buffer_size, decode_content=True)
+                    if not chunk:
+                        break
+                    yield chunk
                     now_utc = to_utc_naive()
                     if (now_utc - last_heartbeat_at).total_seconds() >= heartbeat_interval:
                         update_connection_heartbeat(connection_id, heartbeat_time=now_utc)
                         last_heartbeat_at = now_utc
                         heartbeat_interval = get_heartbeat_interval_seconds()
 
-                    if chunk:
-                        yield chunk
         except Exception as e:
-            logger.error(f"Stream error: {e}")
+            logger.error(f"频道 {channel_id} 流读取失败: {type(e).__name__}")
         finally:
-            # 幂等结束连接：落历史 + 删除活跃连接
-            try:
-                result = close_active_connection(
-                    connection_id=connection_id,
-                    end_time=to_utc_naive(),
-                    fallback_watch_history_id=watch_record_id
-                )
-                if result.get('history_updated'):
-                    logger.debug(
-                        f"观看记录保存: 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
+            upstream.close()
+            if not resource_data:
+                # 连续流结束时关闭会话；HLS 分片结束不代表用户停止播放。
+                try:
+                    result = close_active_connection(
+                        connection_id=connection_id,
+                        end_time=to_utc_naive(),
+                        fallback_watch_history_id=watch_record_id
                     )
-                elif result.get('history_deleted_short'):
-                    logger.debug(
-                        f"观看记录已忽略(<5秒): 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
-                    )
-            except Exception as e:
-                logger.error(f"保存观看记录失败: connection_id={connection_id}, error={e}")
+                    if result.get('history_updated'):
+                        logger.debug(
+                            f"观看记录保存: 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
+                        )
+                    elif result.get('history_deleted_short'):
+                        logger.debug(
+                            f"观看记录已忽略(<5秒): 用户 {username}, 频道 {channel_name}, 时长 {result.get('duration', 0)}秒"
+                        )
+                except Exception as e:
+                    logger.error(f"保存观看记录失败: connection_id={connection_id}, error={e}")
     
-    # 获取原始响应的 Content-Type（失败时回退默认值）
-    content_type = 'video/mp2t'
-    try:
-        head_response = requests.head(stream_url, timeout=10, allow_redirects=True)
-        if head_response.ok:
-            content_type = head_response.headers.get('Content-Type', content_type)
-        else:
-            logger.warning(
-                f"探测 Content-Type 失败: url={stream_url}, status={head_response.status_code}"
-            )
-    except requests.RequestException as e:
-        logger.warning(f"探测 Content-Type 异常: url={stream_url}, error={e}")
-    
-    return Response(
+    response = Response(
         stream_with_context(generate()),
-        mimetype=content_type
+        status=upstream.status_code,
+        content_type=upstream.headers.get('Content-Type', 'video/mp2t')
     )
+    for name in ('Content-Range', 'Accept-Ranges'):
+        if name in upstream.headers:
+            response.headers[name] = upstream.headers[name]
+    response.headers['X-Accel-Buffering'] = 'no'
+    response.headers['Cache-Control'] = 'no-store, no-transform'
+    response.call_on_close(upstream.close)
+    return response
 
 
 @bp.route('/status', methods=['GET'])

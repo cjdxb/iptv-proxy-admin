@@ -79,7 +79,23 @@
             </div>
           </el-form-item>
 
-          <div class="sub-section-title">代理缓冲配置</div>
+          <div class="sub-section-title">订阅代理与缓冲配置</div>
+
+          <el-form-item label="HTTP 服务端代理">
+            <div class="form-item-content">
+              <el-switch v-model="settings.http_proxy_enabled" />
+              <div class="form-item-tip">开启时，HTTP/HTTPS 频道通过服务端代理播放；关闭时，M3U/TXT 订阅提供原始直链，由播放器直接访问源地址。RTP/UDP 频道不受影响。</div>
+              <div class="form-item-tip">保存后需刷新播放器订阅；直链播放不会记录服务端观看历史和代理状态。</div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="RTP/UDP 服务端代理">
+            <div class="form-item-content">
+              <el-switch v-model="settings.multicast_proxy_enabled" />
+              <div class="form-item-tip">开启时，RTP/UDP 频道通过服务端代理播放（沿用 UDPxy 配置）；关闭时，M3U/TXT 订阅提供原始 RTP/UDP 直链，播放器需支持对应协议并能访问组播网络。</div>
+              <div class="form-item-tip">保存后需刷新播放器订阅；直链播放不会记录服务端观看历史和代理状态。</div>
+            </div>
+          </el-form-item>
 
           <el-form-item label="缓冲区大小">
             <div class="form-item-content">
@@ -357,6 +373,8 @@ const settings = reactive({
   site_name: '',
   watch_history_retention_days: 30,
   proxy_buffer_size: 8192,
+  http_proxy_enabled: true,
+  multicast_proxy_enabled: true,
   health_check_timeout: 10,
   health_check_max_retries: 1,
   health_check_threads: 3,
@@ -374,6 +392,8 @@ async function fetchSettings() {
   try {
     const response = await api.settings.getAll()
     Object.assign(settings, response.data)
+    settings.http_proxy_enabled = String(response.data.http_proxy_enabled ?? 'true').toLowerCase() !== 'false'
+    settings.multicast_proxy_enabled = String(response.data.multicast_proxy_enabled ?? 'true').toLowerCase() !== 'false'
     if (!settings.site_name) {
       settings.site_name = siteStore.siteName
     }
@@ -479,6 +499,8 @@ async function saveStreamingConfig() {
   savingStreaming.value = true
   try {
     await api.settings.updateOne('udpxy_enabled', settings.udpxy_enabled.toString())
+    await api.settings.updateOne('http_proxy_enabled', settings.http_proxy_enabled.toString())
+    await api.settings.updateOne('multicast_proxy_enabled', settings.multicast_proxy_enabled.toString())
     await api.settings.updateOne('udpxy_url', settings.udpxy_url)
     await api.settings.updateOne('proxy_buffer_size', settings.proxy_buffer_size)
     // 重载配置使其立即生效

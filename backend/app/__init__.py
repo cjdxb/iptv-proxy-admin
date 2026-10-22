@@ -44,6 +44,25 @@ def _ensure_users_schema():
     db.session.commit()
 
 
+def _ensure_channels_schema():
+    """兼容旧 MySQL 库：长鉴权地址不能受 VARCHAR(500) 限制。"""
+    if db.engine.dialect.name != 'mysql':
+        return
+
+    inspector = inspect(db.engine)
+    if 'channels' not in inspector.get_table_names():
+        return
+
+    for column in inspector.get_columns('channels'):
+        if (column['name'] == 'url'
+                and isinstance(column['type'], db.String)
+                and getattr(column['type'], 'length', None) is not None):
+            db.session.execute(text('ALTER TABLE channels MODIFY COLUMN url TEXT NOT NULL'))
+            db.session.commit()
+            logger.info('已将 channels.url 升级为 TEXT，支持长播放源地址')
+            break
+
+
 def _quote_mysql_identifier(identifier):
     """为 MySQL 标识符添加安全引用"""
     return f"`{identifier.replace('`', '``')}`"
@@ -144,6 +163,7 @@ def create_app():
         db.create_all()
         _drop_mysql_foreign_keys()
         _ensure_users_schema()
+        _ensure_channels_schema()
 
         # 初始化默认管理员用户
         from .models.users import Users

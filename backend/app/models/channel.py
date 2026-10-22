@@ -14,7 +14,7 @@ class Channel(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    url = db.Column(db.String(500), nullable=False)
+    url = db.Column(db.Text, nullable=False)
     logo = db.Column(db.String(500), nullable=True)
     group_id = db.Column(db.Integer, nullable=True, index=True)
     sort_order = db.Column(db.Integer, default=0)
@@ -40,6 +40,9 @@ class Channel(db.Model):
         primaryjoin='Channel.id == WatchHistory.channel_id',
         foreign_keys='WatchHistory.channel_id',
         back_populates='channel',
+        # 无数据库外键：删除频道后保留历史及原频道 ID，与批量删除一致。
+        # 使用 'all'，避免已加载的历史记录也被 ORM 将 channel_id 置空。
+        passive_deletes='all',
         lazy='dynamic'
     )
     

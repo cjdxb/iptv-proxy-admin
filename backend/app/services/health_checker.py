@@ -85,8 +85,12 @@ def _check_channel_once(channel_info, timeout, udpxy_enabled, udpxy_url):
     url = channel_info.get('url') or ''
 
     if protocol in ('http', 'https'):
-        response = requests.head(url, timeout=timeout, allow_redirects=True)
-        return response.status_code < 400
+        # 部分 IPTV 服务拒绝 HEAD；使用与播放器一致的 GET 并验证有数据。
+        with requests.get(url, timeout=timeout, stream=True) as response:
+            if response.status_code != 200:
+                logger.debug(f"频道 {channel_info.get('id')} GET 检测失败: HTTP {response.status_code}")
+                return False
+            return bool(next(response.iter_content(chunk_size=1024), b''))
 
     if protocol in ('rtp', 'udp'):
         addr = _extract_rtp_udp_addr(url)
@@ -102,7 +106,8 @@ def _check_channel_with_retry(channel_info, timeout, max_retries, udpxy_enabled,
     for attempt in range(max_retries + 1):
         try:
             is_healthy = _check_channel_once(channel_info, timeout, udpxy_enabled, udpxy_url)
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"频道 {channel_info.get('id')} 检测网络异常: {type(e).__name__}")
             is_healthy = False
         except Exception as e:
             if attempt == max_retries:

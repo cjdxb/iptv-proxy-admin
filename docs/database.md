@@ -105,7 +105,7 @@ IPTV 频道主数据。
 |---|---|---|---|---|---|
 | `id` | Integer | 否 | 自增 | 主键 | 频道 ID |
 | `name` | String(200) | 否 | - | - | 频道名称 |
-| `url` | String(500) | 否 | - | - | 播放源 URL |
+| `url` | Text | 否 | - | - | 播放源 URL（支持长鉴权参数） |
 | `logo` | String(500) | 是 | `NULL` | - | Logo URL |
 | `group_id` | Integer | 是 | `NULL` | 普通索引 | 分组 ID（逻辑关联 `channel_groups.id`） |
 | `sort_order` | Integer | 否 | `0` | - | 排序值 |
@@ -214,6 +214,7 @@ IPTV 频道主数据。
 - `db.create_all()`
 - （MySQL）自动移除历史版本遗留的外键约束
 - 兼容性补列：`users.must_change_password`（旧库缺失时自动 `ALTER TABLE`）
+- 兼容长播放源地址：启动时自动将旧 MySQL 库的 `channels.url` 从 `VARCHAR(500)` 升级为 `TEXT`；SQLite 无需迁移。MySQL 账户需要具备该表的 `ALTER` 权限。
 - 创建默认管理员（若不存在）
 
 ### 版本升级注意

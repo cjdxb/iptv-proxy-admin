@@ -2271,7 +2271,7 @@ UDPxy 是一个组播到HTTP的转换代理。
 |-------|---------|------|------|--------|------|
 | `id` | Integer | - | PK, AUTO_INCREMENT | - | 频道ID |
 | `name` | String | 200 | NOT NULL | - | 频道名称 |
-| `url` | String | 500 | NOT NULL | - | 直播流地址 |
+| `url` | Text | - | NOT NULL | - | 直播流地址（支持长鉴权参数） |
 | `logo` | String | 500 | | NULL | Logo图片URL |
 | `group_id` | Integer | - | INDEX | NULL | 所属分组ID（逻辑关联 `channel_groups.id`） |
 | `sort_order` | Integer | - | NOT NULL | 0 | 排序值 |

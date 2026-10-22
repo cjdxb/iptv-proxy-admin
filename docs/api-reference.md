@@ -418,7 +418,7 @@ Content-Type: application/json
 
 ### `POST /api/health/check/{id}`
 
-检测单个频道。
+检测单个频道。HTTP/HTTPS 使用流式 GET 并读取少量数据，兼容不支持 HEAD 的 IPTV 服务；检测结果表示地址可响应，不保证浏览器支持其音视频编码。
 
 ### `POST /api/health/check-all`
 
@@ -435,6 +435,8 @@ Content-Type: application/json
 - 无需 Bearer
 - 需要订阅 token
 - 返回实际流媒体内容
+- HLS 首次请求重定向到带资源签名的清单地址；子清单、分片、密钥和初始化片段均通过代理访问，支持分片 Range 请求。
+- HLS 子请求复用观看会话并续心跳，停止播放后由后台 worker 按超时回收，因此应同时运行 `backend/worker.py`。
 
 常见错误：
 
@@ -442,6 +444,7 @@ Content-Type: application/json
 - `403`：频道被禁用
 - `404`：频道不存在
 - `500`：组播但 UDPxy 未配置 / 会话创建失败
+- `502`：上游连接失败、非成功状态或无效 HLS 清单；上游 HTTP 错误包含 `upstream_status`。
 
 ### `GET /api/proxy/status`
 

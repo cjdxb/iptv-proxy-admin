@@ -362,6 +362,7 @@ import {
   FullScreen
 } from '@element-plus/icons-vue'
 import mpegts from 'mpegts.js'
+import Hls from 'hls.js'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
@@ -384,6 +385,7 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const previewMuted = ref(false)
 let previewPlayer = null
+let previewHls = null
 
 // 筛选
 const filters = reactive({
@@ -592,12 +594,6 @@ async function openPreview(channel) {
 
   await nextTick()
 
-  if (!mpegts.isSupported()) {
-    previewLoading.value = false
-    previewError.value = '当前浏览器不支持该视频格式，请使用最新版 Chrome、Edge 或 Firefox'
-    return
-  }
-
   const token = authStore.user?.token
   if (!token) {
     previewLoading.value = false
@@ -605,10 +601,55 @@ async function openPreview(channel) {
     return
   }
 
+  const streamUrl = `/api/proxy/stream/${channel.id}?token=${encodeURIComponent(token)}`
+  const isHls = /\.m3u8(?:[?#]|$)/i.test(channel.url)
+  if (isHls) {
+    const video = previewVideoRef.value
+    const play = async () => {
+      try {
+        await video.play()
+      } catch {
+        video.muted = true
+        previewMuted.value = true
+        try {
+          await video.play()
+        } catch {
+          previewLoading.value = false
+          previewError.value = '自动播放失败，请允许浏览器自动播放后重试'
+        }
+      }
+    }
+    if (Hls.isSupported()) {
+      previewHls = new Hls()
+      previewHls.on(Hls.Events.MANIFEST_PARSED, play)
+      previewHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          previewLoading.value = false
+          previewError.value = 'HLS 加载失败，请检查频道状态或播放源响应'
+        }
+      })
+      previewHls.loadSource(streamUrl)
+      previewHls.attachMedia(video)
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = streamUrl
+      await play()
+    } else {
+      previewLoading.value = false
+      previewError.value = '当前浏览器不支持 HLS 播放'
+    }
+    return
+  }
+
+  if (!mpegts.isSupported()) {
+    previewLoading.value = false
+    previewError.value = '当前浏览器不支持该视频格式，请使用最新版 Chrome、Edge 或 Firefox'
+    return
+  }
+
   previewPlayer = mpegts.createPlayer({
     type: 'mpegts',
     isLive: true,
-    url: `/api/proxy/stream/${channel.id}?token=${encodeURIComponent(token)}`
+    url: streamUrl
   })
 
   previewPlayer.attachMediaElement(previewVideoRef.value)
@@ -659,6 +700,10 @@ async function openPreviewFullscreen() {
 
 // 停止预览并释放流连接
 function stopPreview() {
+  if (previewHls) {
+    previewHls.destroy()
+    previewHls = null
+  }
   if (previewPlayer) {
     previewPlayer.pause()
     previewPlayer.unload()

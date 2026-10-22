@@ -21,6 +21,8 @@ class Settings(db.Model):
     KEY_SITE_NAME = 'site_name'
     KEY_WATCH_HISTORY_RETENTION_DAYS = 'watch_history_retention_days'
     KEY_PROXY_BUFFER_SIZE = 'proxy_buffer_size'
+    KEY_HTTP_PROXY_ENABLED = 'http_proxy_enabled'
+    KEY_MULTICAST_PROXY_ENABLED = 'multicast_proxy_enabled'
     KEY_HEALTH_CHECK_TIMEOUT = 'health_check_timeout'
     KEY_HEALTH_CHECK_MAX_RETRIES = 'health_check_max_retries'
     KEY_HEALTH_CHECK_THREADS = 'health_check_threads'

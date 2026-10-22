@@ -31,6 +31,8 @@
 | `udpxy_enabled` | 是否启用 UDPxy 转发 | `false` | 立即生效 |
 | `udpxy_url` | UDPxy 地址 | `http://localhost:3680` | 立即生效 |
 | `proxy_buffer_size` | 流代理缓冲区（字节） | `8192` | 立即生效 |
+| `http_proxy_enabled` | HTTP/HTTPS 频道是否走服务端代理；关闭时 M3U/TXT 订阅输出原始直链，RTP/UDP 不受影响 | `true` | 重新获取订阅生效，无需重启；直链播放不记录服务端观看历史和代理状态 |
+| `multicast_proxy_enabled` | RTP/UDP 频道是否走服务端代理（沿用 UDPxy 配置）；关闭时 M3U/TXT 订阅输出原始 RTP/UDP 直链，HTTP/HTTPS 不受影响 | `true` | 重新获取订阅生效，无需重启；播放器需支持协议并能访问组播网络，直链播放不记录服务端观看历史和代理状态 |
 | `health_check_timeout` | 健康检测超时（秒） | `10` | 立即生效 |
 | `health_check_max_retries` | 健康检测重试次数 | `1` | 立即生效 |
 | `health_check_threads` | 健康检测线程数 | `3` | 立即生效 |
@@ -122,6 +124,7 @@
 
 #### `PROXY_BUFFER_SIZE`
 - 默认值：`8192`
+- 表示每次转发的最大读取字节数；连续流收到可用数据就立即发送，不等待缓冲区填满。流响应带有 `X-Accel-Buffering: no`，反向代理也应关闭缓冲与缓存。
 
 ### 健康检测运行参数（环境变量回退值）
 
