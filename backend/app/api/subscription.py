@@ -8,16 +8,17 @@ from app.models.users import Users
 from app.models.channel import Channel
 from app.models.settings import Settings
 from app.utils.auth import login_required, get_current_user
+from app.utils.stream_url import get_udpxy_url
 
 bp = Blueprint('subscription', __name__, url_prefix='/api/subscription')
 
 
 def get_stream_url(channel, token, request_obj, http_proxy_enabled=True, multicast_proxy_enabled=True):
-    """按协议的订阅设置生成代理 URL 或原始直链。"""
+    """按协议生成播放地址：服务端代理优先，组播其次使用 UDPxy，最后直连。"""
     if not http_proxy_enabled and channel.url.lower().startswith(('http://', 'https://')):
         return channel.url
     if not multicast_proxy_enabled and channel.url.lower().startswith(('rtp://', 'udp://')):
-        return channel.url
+        return get_udpxy_url(channel.url) or channel.url
     host = request_obj.host_url.rstrip('/')
     return f"{host}/api/proxy/stream/{channel.id}?token={token}"
 

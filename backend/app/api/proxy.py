@@ -17,34 +17,11 @@ from app.models.active_connection import ActiveConnection
 from app.config import get_heartbeat_interval_seconds
 from app.utils.auth import login_required
 from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
+from app.utils.stream_url import get_udpxy_url
 from app.services.watch_history_saver import update_connection_heartbeat, close_active_connection
 from app.services.hls import is_hls_response, resource_signer, rewrite_playlist
 
 bp = Blueprint('proxy', __name__, url_prefix='/api/proxy')
-
-
-def get_udpxy_url(original_url):
-    """将组播地址转换为 UDPxy 地址"""
-    from app.config import get_udpxy_enabled, get_udpxy_url as get_udpxy_url_config
-
-    if not get_udpxy_enabled():
-        return None
-
-    udpxy_base = get_udpxy_url_config().rstrip('/')
-    
-    # 解析 rtp:// 或 udp:// 地址
-    # 格式: rtp://239.0.0.1:5000 或 udp://@239.0.0.1:5000
-    if original_url.startswith('rtp://'):
-        addr = original_url[6:]  # 移除 rtp://
-    elif original_url.startswith('udp://'):
-        addr = original_url[6:]  # 移除 udp://
-        if addr.startswith('@'):
-            addr = addr[1:]  # 移除 @
-    else:
-        return None
-    
-    # UDPxy URL 格式: http://udpxy:port/udp/239.0.0.1:5000
-    return f"{udpxy_base}/udp/{addr}"
 
 
 @bp.route('/stream/<int:channel_id>', methods=['GET'])

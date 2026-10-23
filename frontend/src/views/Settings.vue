@@ -55,7 +55,7 @@
           <el-form-item label="启用 UDPxy">
             <div class="form-item-content">
               <el-switch v-model="settings.udpxy_enabled" />
-              <div class="form-item-tip">启用后可将组播流（RTP/UDP）转换为 HTTP 流</div>
+              <div class="form-item-tip">将 RTP/UDP 组播转换为 HTTP 流。</div>
             </div>
           </el-form-item>
 
@@ -75,7 +75,7 @@
                   检测连接
                 </el-button>
               </div>
-              <div class="form-item-tip">UDPxy 代理服务器地址，例如：http://192.168.1.1:4022（容器部署可尝试 host.docker.internal）</div>
+              <div class="form-item-tip">如 http://192.168.1.1:4022，直连 UDPxy 时需确保播放器可访问。</div>
             </div>
           </el-form-item>
 
@@ -84,18 +84,18 @@
           <el-form-item label="HTTP 服务端代理">
             <div class="form-item-content">
               <el-switch v-model="settings.http_proxy_enabled" />
-              <div class="form-item-tip">开启时，HTTP/HTTPS 频道通过服务端代理播放；关闭时，M3U/TXT 订阅提供原始直链，由播放器直接访问源地址。RTP/UDP 频道不受影响。</div>
-              <div class="form-item-tip">保存后需刷新播放器订阅；直链播放不会记录服务端观看历史和代理状态。</div>
+              <div class="form-item-tip">HTTP/HTTPS 频道：开启返回服务端代理链接，关闭返回直链。</div>
             </div>
           </el-form-item>
 
           <el-form-item label="RTP/UDP 服务端代理">
             <div class="form-item-content">
               <el-switch v-model="settings.multicast_proxy_enabled" />
-              <div class="form-item-tip">开启时，RTP/UDP 频道通过服务端代理播放（沿用 UDPxy 配置）；关闭时，M3U/TXT 订阅提供原始 RTP/UDP 直链，播放器需支持对应协议并能访问组播网络。</div>
-              <div class="form-item-tip">保存后需刷新播放器订阅；直链播放不会记录服务端观看历史和代理状态。</div>
+              <div class="form-item-tip">开启返回服务端代理链接（需配置 UDPxy）；关闭优先返回 UDPxy 链接，未启用 UDPxy 则返回 RTP/UDP 直链。</div>
             </div>
           </el-form-item>
+
+          <div class="form-item-tip">保存后刷新订阅；仅服务端代理播放记录观看历史和代理状态。</div>
 
           <el-form-item label="缓冲区大小">
             <div class="form-item-content">

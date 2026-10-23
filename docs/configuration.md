@@ -29,11 +29,11 @@
 
 | 键名 | 说明 | 默认值 | 生效方式 |
 |---|---|---|---|
-| `udpxy_enabled` | 是否启用 UDPxy 转发 | `false` | 立即生效 |
-| `udpxy_url` | UDPxy 地址 | `http://localhost:3680` | 立即生效 |
+| `udpxy_enabled` | 是否启用 UDPxy 组播转 HTTP；关闭 RTP/UDP 服务端代理时，启用此项会在订阅中返回 UDPxy 地址 | `false` | 新请求生效；订阅中的地址需刷新播放器订阅 |
+| `udpxy_url` | UDPxy 地址；播放器直接访问 UDPxy 时需填写播放器可访问的地址 | `http://localhost:3680` | 新请求生效；订阅中的地址需刷新播放器订阅 |
 | `proxy_buffer_size` | 流代理缓冲区（字节） | `8192` | 立即生效 |
 | `http_proxy_enabled` | HTTP/HTTPS 频道是否走服务端代理；关闭时 M3U/TXT 订阅输出原始直链，RTP/UDP 不受影响 | `true` | 重新获取订阅生效，无需重启；直链播放不记录服务端观看历史和代理状态 |
-| `multicast_proxy_enabled` | RTP/UDP 频道是否走服务端代理（沿用 UDPxy 配置）；关闭时 M3U/TXT 订阅输出原始 RTP/UDP 直链，HTTP/HTTPS 不受影响 | `true` | 重新获取订阅生效，无需重启；播放器需支持协议并能访问组播网络，直链播放不记录服务端观看历史和代理状态 |
+| `multicast_proxy_enabled` | RTP/UDP 频道开启时返回服务端代理地址；关闭时，若启用 UDPxy 则返回转换后的 HTTP 地址，否则返回原始 RTP/UDP 直链 | `true` | 重新获取订阅生效，无需重启；直接访问 UDPxy 或原始直链不记录本系统观看历史和代理状态 |
 | `health_check_timeout` | 健康检测超时（秒） | `10` | 立即生效 |
 | `health_check_max_retries` | 健康检测重试次数 | `1` | 立即生效 |
 | `health_check_threads` | 健康检测线程数 | `3` | 立即生效 |
@@ -43,6 +43,20 @@
 | `site_name` | 站点显示名称 | `IPTV Proxy Admin` | 立即生效（前端重新拉取） |
 | `epg_url` | 订阅 M3U 的 EPG 地址 | 空 | 立即生效 |
 | `watch_history_retention_days` | 历史保留天数（用于策略配置） | `30` | 立即生效（不会自动删除历史） |
+
+### 订阅播放地址选择
+
+M3U 和 TXT 订阅使用相同规则，按频道的原始协议选择地址：
+
+| 频道协议 | 对应服务端代理 | UDPxy | 返回地址 |
+|---|---|---|---|
+| HTTP/HTTPS | 开启 | 任意 | 服务端代理地址 |
+| HTTP/HTTPS | 关闭 | 任意 | 原始 HTTP/HTTPS 直链 |
+| RTP/UDP | 开启 | 任意 | 服务端代理地址 |
+| RTP/UDP | 关闭 | 开启 | UDPxy 转换后的 HTTP 地址 |
+| RTP/UDP | 关闭 | 关闭 | 原始 RTP/UDP 直链 |
+
+服务端代理播放组播源仍需启用并配置 UDPxy。直接访问 UDPxy 时，播放器需能访问所配置的 UDPxy 地址；使用原始组播直链时，播放器需支持 RTP/UDP 并能访问组播网络。
 
 ## 环境变量配置（`backend/.env`）
 
