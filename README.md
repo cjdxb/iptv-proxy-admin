@@ -23,7 +23,7 @@ IPTV Proxy Admin 提供统一 Web 管理界面，管理 IPTV 频道并提供可�
 - 统一流代理入口（支持组播经 UDPxy 转换）
 - JWT 登录认证（Access Token + Refresh Token）
 - 首次默认管理员强制改密（`must_change_password`）
-- 健康检测（手动 + 定时 + 重试 + 并发线程）
+- 健康检测（手动队列 + worker 低频串行检测 + 播放状态更新）
 - 观看历史与活跃连接分离存储（支持僵尸连接回收）
 - Web 设置热更新（无需重启 Web 进程）
 
@@ -134,7 +134,8 @@ JWT_REFRESH_EXPIRES_DAYS=7
 
 # Health scheduler
 HEALTH_CHECK_ENABLED=true
-HEALTH_CHECK_INTERVAL=1800
+HEALTH_CHECK_INTERVAL=21600
+HEALTH_CHECK_CHANNEL_DELAY=10
 
 # Watch session / worker
 HEARTBEAT_INTERVAL_SECONDS=10

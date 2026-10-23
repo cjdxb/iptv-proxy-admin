@@ -168,18 +168,23 @@
             </div>
           </el-form-item>
 
-          <el-form-item label="检测线程数">
+          <el-form-item label="自动检测间隔">
             <div class="form-item-content">
               <div class="input-with-unit">
-                <el-input-number
-                  v-model="settings.health_check_threads"
-                  :min="1"
-                  :max="5"
-                  :step="1"
-                />
-                <span class="unit-text">线程</span>
+                <el-input-number v-model="settings.health_check_interval" :min="3600" :max="604800" :step="3600" />
+                <span class="unit-text">秒</span>
               </div>
-              <div class="form-item-tip">并发检测的线程数，值越大检测速度越快，推荐值：3-5线程</div>
+              <div class="form-item-tip">同一频道两次自动检测的最短间隔，默认 21600 秒（6 小时）。播放中或近期已检测的频道会跳过。</div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="频道检测间隔">
+            <div class="form-item-content">
+              <div class="input-with-unit">
+                <el-input-number v-model="settings.health_check_channel_delay" :min="5" :max="300" :step="5" />
+                <span class="unit-text">秒</span>
+              </div>
+              <div class="form-item-tip">所有主动检测均串行执行，完成一个频道后至少等待此间隔，默认 10 秒。自动检测连续两轮失败才标记离线，播放收到数据后恢复正常。</div>
             </div>
           </el-form-item>
 
@@ -375,9 +380,10 @@ const settings = reactive({
   proxy_buffer_size: 8192,
   http_proxy_enabled: true,
   multicast_proxy_enabled: true,
-  health_check_timeout: 10,
+  health_check_timeout: 20,
   health_check_max_retries: 1,
-  health_check_threads: 3,
+  health_check_interval: 21600,
+  health_check_channel_delay: 10,
   udpxy_enabled: false,
   udpxy_url: 'http://localhost:3680',
   heartbeat_interval_seconds: 10,
@@ -413,7 +419,7 @@ async function fetchSettings() {
     if (settings.health_check_timeout) {
       settings.health_check_timeout = parseInt(settings.health_check_timeout)
     } else {
-      settings.health_check_timeout = 10
+      settings.health_check_timeout = 20
     }
     // 设置健康检测重试次数默认值
     if (settings.health_check_max_retries !== undefined) {
@@ -421,12 +427,8 @@ async function fetchSettings() {
     } else {
       settings.health_check_max_retries = 1
     }
-    // 设置健康检测线程数默认值
-    if (settings.health_check_threads) {
-      settings.health_check_threads = parseInt(settings.health_check_threads)
-    } else {
-      settings.health_check_threads = 3
-    }
+    settings.health_check_interval = parseInt(settings.health_check_interval) || 21600
+    settings.health_check_channel_delay = parseInt(settings.health_check_channel_delay) || 10
     // 设置 UDPxy 启用状态默认值
     if (settings.udpxy_enabled !== undefined) {
       settings.udpxy_enabled = settings.udpxy_enabled === 'true' || settings.udpxy_enabled === true
@@ -548,8 +550,12 @@ async function saveHealthCheckConfig() {
     return
   }
 
-  if (!settings.health_check_threads || settings.health_check_threads < 1 || settings.health_check_threads > 5) {
-    ElMessage.warning('检测线程数必须在 1-5 之间')
+  if (!Number.isInteger(settings.health_check_interval) || settings.health_check_interval < 3600 || settings.health_check_interval > 604800) {
+    ElMessage.warning('自动检测间隔必须在 3600-604800 秒之间')
+    return
+  }
+  if (!Number.isInteger(settings.health_check_channel_delay) || settings.health_check_channel_delay < 5 || settings.health_check_channel_delay > 300) {
+    ElMessage.warning('频道检测间隔必须在 5-300 秒之间')
     return
   }
 
@@ -557,7 +563,8 @@ async function saveHealthCheckConfig() {
   try {
     await api.settings.updateOne('health_check_timeout', settings.health_check_timeout)
     await api.settings.updateOne('health_check_max_retries', settings.health_check_max_retries)
-    await api.settings.updateOne('health_check_threads', settings.health_check_threads)
+    await api.settings.updateOne('health_check_interval', settings.health_check_interval)
+    await api.settings.updateOne('health_check_channel_delay', settings.health_check_channel_delay)
     // 重载配置使其立即生效
     await api.settings.reload()
     ElMessage.success('健康检测配置已保存并应用')

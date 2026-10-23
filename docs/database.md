@@ -112,7 +112,9 @@ IPTV 频道主数据。
 | `is_active` | Boolean | 否 | `true` | - | 是否启用 |
 | `protocol` | String(20) | 否 | `http` | - | 协议类型：`http/https/rtp/udp` |
 | `tvg_id` | String(100) | 是 | `NULL` | - | EPG 标识 |
-| `last_check` | DateTime | 是 | `NULL` | - | 最后健康检测时间（UTC） |
+| `last_check` | DateTime | 是 | `NULL` | - | 最后检测或播放状态更新时间（UTC） |
+| `health_failure_count` | Integer | 否 | `0` | - | 连续失败计数，自动检测两轮失败才离线 |
+| `health_check_requested_at` | DateTime | 是 | `NULL` | - | 手动后台检测请求时间，worker 完成后清空 |
 | `is_healthy` | Boolean | 否 | `true` | - | 健康状态 |
 | `created_at` | DateTime | 否 | 应用写入 | - | 创建时间（UTC） |
 | `updated_at` | DateTime | 否 | 应用写入 | - | 更新时间（UTC） |
@@ -181,7 +183,8 @@ IPTV 频道主数据。
 - `proxy_buffer_size`
 - `health_check_timeout`
 - `health_check_max_retries`
-- `health_check_threads`
+- `health_check_interval`
+- `health_check_channel_delay`
 - `udpxy_enabled`
 - `udpxy_url`
 - `heartbeat_interval_seconds`

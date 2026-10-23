@@ -169,7 +169,7 @@
         </router-link>
         <div class="action-item" :class="{ 'is-loading': healthCheckLoading }" @click="runHealthCheck">
           <span class="action-emoji" :class="{ 'rotating': healthCheckLoading }">🔄</span>
-          <span>{{ healthCheckLoading ? '检测中...' : '健康检测' }}</span>
+          <span>{{ pendingChecks > 0 ? `待检测 ${pendingChecks} 个` : healthCheckLoading ? '提交中...' : '健康检测' }}</span>
         </div>
         <router-link to="/settings" class="action-item">
           <span class="action-emoji">⚙️</span>
@@ -189,6 +189,7 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import api from '@/api'
+import { useHealthQueue } from '@/composables/useHealthQueue'
 import { formatDate } from '@/utils/datetime'
 
 // 注册 ECharts 组件
@@ -198,6 +199,7 @@ const stats = ref({})
 const loading = ref(false)
 const chartLoading = ref(false)
 const healthCheckLoading = ref(false)
+const { pendingChecks, refreshHealthQueue } = useHealthQueue(fetchDashboard)
 const chartDays = ref(7)
 const rankingDays = ref(7)
 const watchStats = ref({ stats: [], total_duration: 0 })
@@ -326,17 +328,18 @@ async function fetchChannelRanking() {
 }
 
 async function runHealthCheck() {
-  if (healthCheckLoading.value) {
+  if (healthCheckLoading.value || pendingChecks.value > 0) {
     ElMessage.warning('健康检测正在进行中，请稍候...')
     return
   }
 
   healthCheckLoading.value = true
   try {
-    ElMessage.info('正在进行健康检测...')
     const result = await api.health.checkAll()
     const data = result.data
-    ElMessage.success(`检测完成：正常 ${data.healthy} 个，异常 ${data.unhealthy} 个`)
+    ElMessage.info(`${data.message}（待检测 ${data.pending} 个）`)
+    pendingChecks.value = data.pending
+    await refreshHealthQueue()
     fetchDashboard()
   } catch (error) {
     ElMessage.error('健康检测失败')

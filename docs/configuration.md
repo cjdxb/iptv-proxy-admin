@@ -19,7 +19,7 @@
 
 - UDPxy 启用状态和地址在播放请求中直接读取数据库，保存后对所有 Web 进程的新请求生效，无需重载；已有播放连接继续使用原地址。
 - 其他内存运行时配置通过 `POST /api/settings/reload` 刷新接收该请求的 Web 进程；多进程部署时，此接口不会广播刷新其他进程。
-- 独立 `worker.py` 每轮执行前会主动从数据库刷新运行参数（健康检测超时/重试/线程、观看会话参数）。
+- 所有定期检测和整批手动检测仅由独立 `worker.py` 执行；健康检测配置直接读取数据库，保存后下一次探测生效。观看会话参数由 history 任务每轮刷新。
 - `history_worker_interval_seconds` 由 `worker.py` 内的 history 调度器读取，修改后需重启 worker 才会使用新间隔。
 - 纯环境变量项（如数据库连接、JWT 密钥）需重启对应进程。
 
@@ -34,9 +34,10 @@
 | `proxy_buffer_size` | 流代理缓冲区（字节） | `8192` | 立即生效 |
 | `http_proxy_enabled` | HTTP/HTTPS 频道是否走服务端代理；关闭时 M3U/TXT 订阅输出原始直链，RTP/UDP 不受影响 | `true` | 重新获取订阅生效，无需重启；直链播放不记录服务端观看历史和代理状态 |
 | `multicast_proxy_enabled` | RTP/UDP 频道开启时返回服务端代理地址；关闭时，若启用 UDPxy 则返回转换后的 HTTP 地址，否则返回原始 RTP/UDP 直链 | `true` | 重新获取订阅生效，无需重启；直接访问 UDPxy 或原始直链不记录本系统观看历史和代理状态 |
-| `health_check_timeout` | 健康检测超时（秒） | `10` | 立即生效 |
+| `health_check_timeout` | 健康检测超时（秒） | `20` | 立即生效 |
 | `health_check_max_retries` | 健康检测重试次数 | `1` | 立即生效 |
-| `health_check_threads` | 健康检测线程数 | `3` | 立即生效 |
+| `health_check_interval` | 同频道自动检测最短间隔（3600-604800 秒） | `21600`（6 小时） | 下次探测生效 |
+| `health_check_channel_delay` | 两个频道之间的等待时间（5-300 秒） | `10` | 下次探测生效 |
 | `heartbeat_interval_seconds` | 播放连接心跳上报间隔（秒） | `10` | 立即生效 |
 | `active_heartbeat_timeout_seconds` | 活跃连接心跳超时阈值（秒） | `45` | 立即生效 |
 | `history_worker_interval_seconds` | history-worker 调度间隔（秒） | `15` | 重启 worker 后生效 |
@@ -124,8 +125,12 @@ M3U 和 TXT 订阅使用相同规则，按频道的原始协议选择地址：
 - 说明：是否启用 `worker.py` 内的健康检测定时任务。
 
 #### `HEALTH_CHECK_INTERVAL`
-- 默认值：`1800`
-- 说明：`worker.py` 内健康检测任务的执行间隔（秒）。
+- 默认值：`21600`（6 小时），范围 3600-604800 秒，旧的小于一小时的配置按一小时执行。
+- 说明：同一频道的自动检测最短间隔；近期检测过或正在播放的频道会跳过。worker 每 5 秒扫描队列，每次最多检测一个频道，扫描不代表每次都拉流。
+- 自动检测连续两轮失败才标记离线；失败重试之间等待 5 秒。手动单频道检测及后台手动队列重试耗尽后更新实际结果。
+- `HEALTH_CHECK_ENABLED=false` 只关闭自动检测，worker 仍处理手动队列。
+- 通过服务端代理播放时，收到流数据或 HLS 分片会更新在线状态；仅清单成功不会恢复在线。上游错误、空流、读取异常更新离线，客户端关闭和正常流结束不会判离线。正常播放状态写入最多每分钟一次。直链播放不经过本服务，无法用于更新状态。
+- 所有主动探测共用数据库串行租约，Web 单频道手动检测和 worker 不会同时拉流；较旧的失败结果不会覆盖更新的播放状态。
 
 ### UDPxy（环境变量回退值）
 
@@ -144,13 +149,14 @@ M3U 和 TXT 订阅使用相同规则，按频道的原始协议选择地址：
 ### 健康检测运行参数（环境变量回退值）
 
 #### `HEALTH_CHECK_TIMEOUT`
-- 默认值：`10`
+- 默认值：`20`
 
 #### `HEALTH_CHECK_MAX_RETRIES`
 - 默认值：`1`
 
-#### `HEALTH_CHECK_THREADS`
-- 默认值：`3`
+#### `HEALTH_CHECK_CHANNEL_DELAY`
+- 默认值：`10` 秒。上一个频道探测完成后至少等待此时间，再开始下一个；最低 5 秒。
+- 检测固定串行，旧的 `HEALTH_CHECK_THREADS` 和数据库 `health_check_threads` 不再使用。
 
 ### 观看会话与 worker
 
@@ -189,7 +195,8 @@ JWT_ACCESS_EXPIRES_HOURS=24
 JWT_REFRESH_EXPIRES_DAYS=7
 
 HEALTH_CHECK_ENABLED=true
-HEALTH_CHECK_INTERVAL=1800
+HEALTH_CHECK_INTERVAL=21600
+HEALTH_CHECK_CHANNEL_DELAY=10
 
 HEARTBEAT_INTERVAL_SECONDS=10
 ACTIVE_HEARTBEAT_TIMEOUT_SECONDS=45
@@ -218,7 +225,8 @@ JWT_ACCESS_EXPIRES_HOURS=24
 JWT_REFRESH_EXPIRES_DAYS=7
 
 HEALTH_CHECK_ENABLED=true
-HEALTH_CHECK_INTERVAL=1800
+HEALTH_CHECK_INTERVAL=21600
+HEALTH_CHECK_CHANNEL_DELAY=10
 
 HEARTBEAT_INTERVAL_SECONDS=10
 ACTIVE_HEARTBEAT_TIMEOUT_SECONDS=45
@@ -232,7 +240,7 @@ GUNICORN_LOG_LEVEL=info
 1. 修改了数据库/JWT/服务监听等环境变量：重启 Web、worker。
 2. 修改了 Web 设置中的运行时项：保存后执行“保存并应用”（前端已调用 `/api/settings/reload`）。
 3. 修改了 `history_worker_interval_seconds`：额外重启 worker 进程。
-4. 修改了 `HEALTH_CHECK_INTERVAL` 或 `HEALTH_CHECK_ENABLED`：额外重启 worker 进程。
+4. 修改 `.env` 中的健康检测参数：重启 worker；通过 Web 修改间隔无需重启。升级本版本时同时重启 Web 和 worker，自动补充旧数据库所需字段。
 
 ## 故障排查
 

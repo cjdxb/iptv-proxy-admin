@@ -21,16 +21,12 @@ def _is_health_worker_enabled():
     return config.get('health_check', {}).get('enabled', True)
 
 
-def _get_health_check_interval_seconds():
-    """读取健康检测间隔（秒）。"""
-    return max(1, int(config.get('health_check', {}).get('interval', 1800)))
-
-
 def start_unified_worker(app):
     """启动统一 worker（阻塞运行）。"""
     history_interval = get_history_worker_interval_seconds()
     health_enabled = _is_health_worker_enabled()
-    health_interval = _get_health_check_interval_seconds()
+    # 这里只扫描待检测频道；真正拉流受每频道冷却时间和全局串行租约限制。
+    health_interval = 5
 
     scheduler = BlockingScheduler()
 
@@ -55,24 +51,21 @@ def start_unified_worker(app):
     def health_job():
         with app.app_context():
             try:
-                # 统一 worker 进程每轮都刷新运行时配置
-                load_runtime_config_from_db()
+                # 健康配置直接读取数据库，每次最多处理一个到期频道。
                 results = run_health_worker_cycle()
-                logger.info(
-                    "health-worker执行完成: "
-                    f"总计={results['total']}, "
-                    f"正常={results['healthy']}, "
-                    f"异常={results['unhealthy']}"
-                )
+                if results['total']:
+                    logger.info(
+                        "health-worker执行完成: "
+                        f"总计={results['total']}, "
+                        f"正常={results['healthy']}, "
+                        f"异常={results['unhealthy']}"
+                    )
             except Exception as e:
                 logger.error(f"health-worker执行失败: {e}")
 
     # 启动后先执行一次，减少首次等待时间
     history_job()
-    if health_enabled:
-        health_job()
-    else:
-        logger.warning("HEALTH_CHECK_ENABLED=false，health-worker 任务未注册")
+    # 启动时不整批拉流，也不阻塞历史记录任务注册。
 
     scheduler.add_job(
         history_job,
@@ -85,17 +78,17 @@ def start_unified_worker(app):
         coalesce=True
     )
 
-    if health_enabled:
-        scheduler.add_job(
-            health_job,
-            'interval',
-            seconds=health_interval,
-            id='health_worker',
-            name='健康检测worker',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True
-        )
+    # 关闭自动检测时仍处理用户主动提交的检测任务。
+    scheduler.add_job(
+        health_job,
+        'interval',
+        seconds=health_interval,
+        id='health_worker',
+        name='健康检测worker',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True
+    )
 
     logger.info(
         "unified-worker已启动: "

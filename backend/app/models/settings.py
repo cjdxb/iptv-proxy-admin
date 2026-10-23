@@ -25,7 +25,7 @@ class Settings(db.Model):
     KEY_MULTICAST_PROXY_ENABLED = 'multicast_proxy_enabled'
     KEY_HEALTH_CHECK_TIMEOUT = 'health_check_timeout'
     KEY_HEALTH_CHECK_MAX_RETRIES = 'health_check_max_retries'
-    KEY_HEALTH_CHECK_THREADS = 'health_check_threads'
+    KEY_HEALTH_CHECK_CHANNEL_DELAY = 'health_check_channel_delay'
     KEY_UDPXY_ENABLED = 'udpxy_enabled'
     KEY_UDPXY_URL = 'udpxy_url'
     KEY_HEARTBEAT_INTERVAL_SECONDS = 'heartbeat_interval_seconds'

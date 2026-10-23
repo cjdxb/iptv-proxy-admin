@@ -20,6 +20,7 @@ from app.utils.datetime_utils import to_iso8601_utc, to_utc_naive
 from app.utils.stream_url import get_udpxy_url
 from app.services.watch_history_saver import update_connection_heartbeat, close_active_connection
 from app.services.hls import is_hls_response, resource_signer, rewrite_playlist
+from app.services.health_checker import record_playback_status
 
 bp = Blueprint('proxy', __name__, url_prefix='/api/proxy')
 
@@ -67,6 +68,8 @@ def stream_channel(channel_id):
             return jsonify({'error': 'HLS 资源签名无效'}), 403
 
     # 在发送响应头、创建观看记录之前发起 GET；不使用上游可能拒绝的 HEAD。
+    source_url = channel.url
+    request_started_at = to_utc_naive()
     upstream = None
     try:
         headers = {}
@@ -76,6 +79,9 @@ def stream_channel(channel_id):
         if upstream.status_code not in (200, 206):
             status = upstream.status_code
             upstream.close()
+            # Range 无效可能只是播放器的探测请求，不代表源离线。
+            if status != 416:
+                record_playback_status(channel_id, False, request_started_at, source_url)
             logger.warning(f'频道 {channel_id} 上游 GET 失败: HTTP {status}')
             return jsonify({'error': f'播放源返回 HTTP {status}', 'upstream_status': status}), 502
         hls = is_hls_response(upstream)
@@ -87,14 +93,17 @@ def stream_channel(channel_id):
                 content.extend(chunk)
                 if len(content) > 2 * 1024 * 1024:
                     upstream.close()
+                    record_playback_status(channel_id, False, request_started_at, source_url)
                     return jsonify({'error': 'HLS 清单过大'}), 502
             playlist = content.decode('utf-8-sig')
             upstream.close()
             if not playlist.lstrip().startswith('#EXTM3U'):
+                record_playback_status(channel_id, False, request_started_at, source_url)
                 return jsonify({'error': '播放源未返回有效的 HLS 清单'}), 502
     except (requests.RequestException, UnicodeError) as e:
         if upstream is not None:
             upstream.close()
+        record_playback_status(channel_id, False, request_started_at, source_url)
         logger.warning(f'频道 {channel_id} 上游请求失败: {type(e).__name__}')
         return jsonify({'error': '播放源连接失败或响应无效'}), 502
     
@@ -160,14 +169,27 @@ def stream_channel(channel_id):
             with upstream as r:
                 # read1 返回当前可用数据，不像 iter_content/read 等待凑满缓冲区。
                 # 使用 urllib3 的公开接口，保留 chunked 解帧和内容解压。
+                received_data = False
                 while True:
-                    chunk = r.raw.read1(buffer_size, decode_content=True)
+                    read_started_at = to_utc_naive()
+                    try:
+                        chunk = r.raw.read1(buffer_size, decode_content=True)
+                    except Exception:
+                        # 只把上游读取失败算作频道故障，客户端关闭及本地数据库错误不算。
+                        record_playback_status(channel_id, False, read_started_at, source_url)
+                        raise
                     if not chunk:
+                        if not received_data:
+                            record_playback_status(channel_id, False, read_started_at, source_url)
                         break
+                    if not received_data:
+                        record_playback_status(channel_id, True, to_utc_naive(), source_url)
+                        received_data = True
                     yield chunk
                     now_utc = to_utc_naive()
                     if (now_utc - last_heartbeat_at).total_seconds() >= heartbeat_interval:
                         update_connection_heartbeat(connection_id, heartbeat_time=now_utc)
+                        record_playback_status(channel_id, True, now_utc, source_url)
                         last_heartbeat_at = now_utc
                         heartbeat_interval = get_heartbeat_interval_seconds()
 

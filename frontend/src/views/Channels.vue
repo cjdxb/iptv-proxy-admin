@@ -32,9 +32,9 @@
           class="search-input"
           @input="debouncedSearch"
         />
-        <el-button @click="runHealthCheck" :loading="healthCheckLoading">
+        <el-button @click="runHealthCheck" :loading="healthCheckLoading" :disabled="pendingChecks > 0">
           <el-icon><Refresh /></el-icon>
-          检测全部频道
+          {{ pendingChecks > 0 ? `后台待检测 ${pendingChecks} 个` : '检测全部频道' }}
         </el-button>
       </div>
       <div class="filter-row">
@@ -219,6 +219,7 @@
           autoplay
           playsinline
           @playing="handlePreviewPlaying"
+          @error="refreshPreviewStatus"
         />
         <div v-if="previewLoading" class="preview-status">
           <el-icon class="is-loading"><Loading /></el-icon>
@@ -362,6 +363,7 @@ import {
   FullScreen
 } from '@element-plus/icons-vue'
 import api from '@/api'
+import { useHealthQueue } from '@/composables/useHealthQueue'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -372,6 +374,7 @@ const groups = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const healthCheckLoading = ref(false)
+const { pendingChecks, refreshHealthQueue } = useHealthQueue(fetchChannels)
 const selectedChannels = ref([])
 
 // 频道预览
@@ -641,6 +644,7 @@ async function openPreview(channel) {
         if (data.fatal) {
           previewLoading.value = false
           previewError.value = 'HLS 加载失败，请检查频道状态或播放源响应'
+          refreshPreviewStatus()
         }
       })
       previewHls.loadSource(streamUrl)
@@ -674,6 +678,7 @@ async function openPreview(channel) {
     previewError.value = channel.is_active
       ? '频道加载失败，请检查频道状态或播放源格式'
       : '该频道未启用，无法预览'
+    refreshPreviewStatus()
   })
   try {
     previewPlayer.load()
@@ -692,6 +697,23 @@ async function openPreview(channel) {
 
 function handlePreviewPlaying() {
   previewLoading.value = false
+  refreshPreviewStatus()
+}
+
+async function refreshPreviewStatus() {
+  const channelId = previewChannel.value?.id
+  if (!channelId) return
+  try {
+    // 读取代理已经记录的结果，不因浏览器解码/自动播放失败而主动标记离线。
+    const { data } = await api.channels.get(channelId)
+    const row = channels.value.find(channel => channel.id === channelId)
+    if (row) {
+      row.is_healthy = data.is_healthy
+      row.last_check = data.last_check
+    }
+  } catch {
+    // 保留现有状态，避免状态刷新打断播放。
+  }
 }
 
 function togglePreviewMute() {
@@ -755,7 +777,9 @@ async function runHealthCheck() {
   try {
     const result = await api.health.checkAll()
     const data = result.data
-    ElMessage.success(`检测完成：正常 ${data.healthy} 个，异常 ${data.unhealthy} 个`)
+    ElMessage.info(`${data.message}（待检测 ${data.pending} 个）`)
+    pendingChecks.value = data.pending
+    await refreshHealthQueue()
     fetchChannels()
   } catch (error) {
     ElMessage.error('健康检测失败')
@@ -773,7 +797,7 @@ async function checkSingleChannel(channel) {
     channel.last_check = result.data.last_check
     ElMessage.success(`频道 "${channel.name}" 检测完成：${result.data.is_healthy ? '正常' : '异常'}`)
   } catch (error) {
-    ElMessage.error('检测失败')
+    ElMessage.error(error.response?.data?.error || '检测失败')
   } finally {
     channel._checking = false
   }

@@ -208,7 +208,7 @@ const api = {
 
     // 健康检测
     health: {
-        checkOne: (channelId) => http.post(`/health/check/${channelId}`),
+        checkOne: (channelId) => http.post(`/health/check/${channelId}`, null, { timeout: 900000 }),
         checkAll: () => http.post('/health/check-all'),
         getStatus: () => http.get('/health/status')
     },

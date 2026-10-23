@@ -44,10 +44,10 @@ def load_config():
         },
         'health_check': {
             'enabled': os.getenv('HEALTH_CHECK_ENABLED', 'true').lower() == 'true',
-            'interval': int(os.getenv('HEALTH_CHECK_INTERVAL', 1800)),
-            'timeout': int(os.getenv('HEALTH_CHECK_TIMEOUT', 10)),
+            'interval': int(os.getenv('HEALTH_CHECK_INTERVAL', 21600)),
+            'channel_delay': int(os.getenv('HEALTH_CHECK_CHANNEL_DELAY', 10)),
+            'timeout': int(os.getenv('HEALTH_CHECK_TIMEOUT', 20)),
             'max_retries': int(os.getenv('HEALTH_CHECK_MAX_RETRIES', 1)),
-            'threads': int(os.getenv('HEALTH_CHECK_THREADS', 3))
         },
         'proxy': {
             'buffer_size': int(os.getenv('PROXY_BUFFER_SIZE', 8192))
@@ -102,12 +102,6 @@ def load_runtime_config_from_db():
         if health_retries:
             _runtime_config['health_check_max_retries'] = int(health_retries)
             logger.info(f"从数据库加载配置: health_check_max_retries={health_retries}")
-
-        # 加载健康检测线程数
-        health_threads = Settings.get('health_check_threads')
-        if health_threads:
-            _runtime_config['health_check_threads'] = int(health_threads)
-            logger.info(f"从数据库加载配置: health_check_threads={health_threads}")
 
         # 加载 UDPxy 启用状态
         udpxy_enabled = Settings.get('udpxy_enabled')
@@ -167,25 +161,31 @@ def get_proxy_buffer_size():
     return config.get('proxy', {}).get('buffer_size', 8192)
 
 def get_health_check_timeout():
-    """获取健康检测超时时间（优先从运行时配置读取）"""
-    runtime_value = get_runtime_config('health_check_timeout')
-    if runtime_value:
-        return runtime_value
-    return config.get('health_check', {}).get('timeout', 10)
+    return _get_health_setting('health_check_timeout', 'timeout', 20, 1, 60)
 
 def get_health_check_max_retries():
-    """获取健康检测重试次数（优先从运行时配置读取）"""
-    runtime_value = get_runtime_config('health_check_max_retries')
-    if runtime_value is not None:
-        return runtime_value
-    return config.get('health_check', {}).get('max_retries', 1)
+    return _get_health_setting('health_check_max_retries', 'max_retries', 1, 0, 5)
 
-def get_health_check_threads():
-    """获取健康检测线程数（优先从运行时配置读取）"""
-    runtime_value = get_runtime_config('health_check_threads')
-    if runtime_value is not None:
-        return runtime_value
-    return config.get('health_check', {}).get('threads', 3)
+def _get_health_setting(key, option, default, minimum, maximum):
+    """直接读取数据库，Web 和独立 worker 使用相同的最新配置。"""
+    value = None
+    if has_app_context():
+        from app.models.settings import Settings
+        value = Settings.get(key)
+    if value is None:
+        value = config.get('health_check', {}).get(option, default)
+    try:
+        return min(maximum, max(minimum, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def get_health_check_interval():
+    return _get_health_setting('health_check_interval', 'interval', 21600, 3600, 604800)
+
+
+def get_health_check_channel_delay():
+    return _get_health_setting('health_check_channel_delay', 'channel_delay', 10, 5, 300)
 
 def get_udpxy_enabled():
     """有应用上下文时读取数据库，避免不同 Web 进程的缓存不一致。"""

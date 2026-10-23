@@ -5,7 +5,7 @@
 
 from flask import Blueprint, request, jsonify
 from app.models.channel import Channel
-from app.services.health_checker import check_channel_health, check_all_channels
+from app.services.health_checker import check_channel_health, check_all_channels, HealthCheckBusy
 from app.utils.auth import login_required
 from app.utils.datetime_utils import to_iso8601_utc
 
@@ -18,7 +18,10 @@ def check_single_channel(channel_id):
     """检测单个频道"""
     channel = Channel.query.get_or_404(channel_id)
     
-    is_healthy = check_channel_health(channel)
+    try:
+        is_healthy = check_channel_health(channel)
+    except HealthCheckBusy as exc:
+        return jsonify({'error': str(exc)}), 409
     
     return jsonify({
         'channel_id': channel.id,
@@ -31,15 +34,14 @@ def check_single_channel(channel_id):
 @bp.route('/check-all', methods=['POST'])
 @login_required
 def check_all():
-    """检测所有频道"""
+    """提交后台串行检测所有频道。"""
     results = check_all_channels()
     
     return jsonify({
-        'message': '健康检测完成',
+        'message': '已提交后台串行检测，频道状态将逐个更新；请确保 worker 已启动',
         'total': results['total'],
-        'healthy': results['healthy'],
-        'unhealthy': results['unhealthy']
-    })
+        'pending': results['pending']
+    }), 202
 
 
 @bp.route('/status', methods=['GET'])
@@ -57,5 +59,7 @@ def get_health_status():
         'total': total,
         'healthy': healthy,
         'unhealthy': unhealthy,
+        'pending': Channel.query.filter(Channel.is_active.is_(True),
+                                        Channel.health_check_requested_at.is_not(None)).count(),
         'unhealthy_channels': [ch.to_dict() for ch in unhealthy_channels]
     })

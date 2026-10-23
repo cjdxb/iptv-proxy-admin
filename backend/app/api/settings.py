@@ -12,6 +12,25 @@ from app.utils.auth import login_required
 
 bp = Blueprint('settings', __name__, url_prefix='/api/settings')
 LOCAL_UDPXY_HOSTS = {'localhost', '127.0.0.1', '::1'}
+HEALTH_SETTING_LIMITS = {
+    'health_check_timeout': (1, 60),
+    'health_check_max_retries': (0, 5),
+    'health_check_interval': (3600, 604800),
+    'health_check_channel_delay': (5, 300),
+}
+
+
+def _validate_health_setting(key, value):
+    if key not in HEALTH_SETTING_LIMITS:
+        return None
+    minimum, maximum = HEALTH_SETTING_LIMITS[key]
+    try:
+        parsed = int(str(value))
+        if minimum <= parsed <= maximum:
+            return None
+    except (TypeError, ValueError):
+        pass
+    return f'{key} 必须是 {minimum}-{maximum} 之间的整数'
 
 
 def _normalize_udpxy_url(raw_url: str):
@@ -123,6 +142,15 @@ def _probe_udpxy(base_url: str, timeout: int = 5):
 def get_settings():
     """获取所有设置"""
     settings = Settings.get_all()
+    # 返回实际生效值，避免界面默认值与环境变量/旧配置不一致。
+    from app.config import (get_health_check_timeout, get_health_check_max_retries,
+                            get_health_check_interval, get_health_check_channel_delay)
+    settings = {key: value for key, value in settings.items() if not key.startswith('_')}
+    settings.pop('health_check_threads', None)
+    settings.update(health_check_timeout=get_health_check_timeout(),
+                    health_check_max_retries=get_health_check_max_retries(),
+                    health_check_interval=get_health_check_interval(),
+                    health_check_channel_delay=get_health_check_channel_delay())
     return jsonify(settings)
 
 
@@ -147,6 +175,10 @@ def update_settings():
         return jsonify({'error': '请提供设置信息'}), 400
     
     for key, value in data.items():
+        error = _validate_health_setting(key, value)
+        if error:
+            return jsonify({'error': error}), 400
+    for key, value in data.items():
         Settings.set(key, value)
     
     return jsonify({
@@ -165,6 +197,9 @@ def update_setting(key):
         return jsonify({'error': '请提供设置值'}), 400
     
     value = data.get('value')
+    error = _validate_health_setting(key, value)
+    if error:
+        return jsonify({'error': error}), 400
     Settings.set(key, value)
     
     return jsonify({

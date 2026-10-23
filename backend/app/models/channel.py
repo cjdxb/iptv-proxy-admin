@@ -25,6 +25,8 @@ class Channel(db.Model):
     # 健康检测相关
     last_check = db.Column(db.DateTime, nullable=True)
     is_healthy = db.Column(db.Boolean, default=True)
+    health_failure_count = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    health_check_requested_at = db.Column(db.DateTime, nullable=True)
     
     created_at = db.Column(db.DateTime, default=to_utc_naive)
     updated_at = db.Column(db.DateTime, default=to_utc_naive, onupdate=to_utc_naive)

@@ -329,7 +329,8 @@ Content-Type: application/json
 ```json
 {
   "site_name": "My IPTV",
-  "health_check_threads": "3"
+  "health_check_interval": 21600,
+  "health_check_channel_delay": 10
 }
 ```
 
@@ -418,15 +419,15 @@ Content-Type: application/json
 
 ### `POST /api/health/check/{id}`
 
-检测单个频道。HTTP/HTTPS 使用流式 GET 并读取少量数据，兼容不支持 HEAD 的 IPTV 服务；检测结果表示地址可响应，不保证浏览器支持其音视频编码。
+手动即时检测单个频道。正在探测其他频道或等待检测间隔时返回 HTTP 409；此接口不注册定时任务。HTTP/HTTPS 使用流式 GET 并读取少量数据，兼容不支持 HEAD 的 IPTV 服务；检测结果表示地址可响应，不保证浏览器支持其音视频编码。
 
 ### `POST /api/health/check-all`
 
-检测所有启用频道。
+将所有启用频道提交到 worker 串行队列，立即返回 HTTP 202：`message`、`total`、`pending`。需要运行独立的 `worker.py`；重复提交保留已有待检测请求，不启动 Web 后台线程。状态逐个更新，通过 `/api/health/status` 的 `pending` 查看进度。
 
 ### `GET /api/health/status`
 
-返回总数、健康数、不健康数及不健康频道列表。
+返回总数、健康数、不健康数、不健康频道列表，以及手动队列剩余数量 `pending`。
 
 ## 代理接口 `/proxy`
 

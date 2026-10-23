@@ -63,6 +63,21 @@ def _ensure_channels_schema():
             break
 
 
+def _ensure_channel_health_schema():
+    """为旧 SQLite/MySQL 库添加检测队列和连续失败计数。"""
+    inspector = inspect(db.engine)
+    if 'channels' not in inspector.get_table_names():
+        return
+    columns = {column['name'] for column in inspector.get_columns('channels')}
+    for name, definition in (
+        ('health_failure_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('health_check_requested_at', 'DATETIME NULL'),
+    ):
+        if name not in columns:
+            db.session.execute(text(f'ALTER TABLE channels ADD COLUMN {name} {definition}'))
+            db.session.commit()
+
+
 def _quote_mysql_identifier(identifier):
     """为 MySQL 标识符添加安全引用"""
     return f"`{identifier.replace('`', '``')}`"
@@ -164,6 +179,7 @@ def create_app():
         _drop_mysql_foreign_keys()
         _ensure_users_schema()
         _ensure_channels_schema()
+        _ensure_channel_health_schema()
 
         # 初始化默认管理员用户
         from .models.users import Users
