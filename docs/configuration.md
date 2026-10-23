@@ -17,7 +17,8 @@
 
 ## 生效机制
 
-- 通过 Web 界面保存后，调用 `POST /api/settings/reload` 可立即刷新 Web 进程内运行时配置。
+- UDPxy 启用状态和地址在播放请求中直接读取数据库，保存后对所有 Web 进程的新请求生效，无需重载；已有播放连接继续使用原地址。
+- 其他内存运行时配置通过 `POST /api/settings/reload` 刷新接收该请求的 Web 进程；多进程部署时，此接口不会广播刷新其他进程。
 - 独立 `worker.py` 每轮执行前会主动从数据库刷新运行参数（健康检测超时/重试/线程、观看会话参数）。
 - `history_worker_interval_seconds` 由 `worker.py` 内的 history 调度器读取，修改后需重启 worker 才会使用新间隔。
 - 纯环境变量项（如数据库连接、JWT 密钥）需重启对应进程。

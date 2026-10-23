@@ -4,6 +4,7 @@
 """
 
 import os
+from flask import has_app_context
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -187,18 +188,30 @@ def get_health_check_threads():
     return config.get('health_check', {}).get('threads', 3)
 
 def get_udpxy_enabled():
-    """获取 UDPxy 启用状态（优先从运行时配置读取）"""
+    """有应用上下文时读取数据库，避免不同 Web 进程的缓存不一致。"""
+    if has_app_context():
+        from app.models.settings import Settings
+        value = Settings.get(Settings.KEY_UDPXY_ENABLED)
+        if value is not None:
+            return str(value).lower() == 'true'
+        return config.get('udpxy', {}).get('enabled', False)
+
     runtime_value = get_runtime_config('udpxy_enabled')
     if runtime_value is not None:
         return runtime_value
     return config.get('udpxy', {}).get('enabled', False)
 
 def get_udpxy_url():
-    """获取 UDPxy URL（优先从运行时配置读取）"""
+    """读取最新数据库地址；未设置时使用环境变量默认值。"""
+    if has_app_context():
+        from app.models.settings import Settings
+        return (Settings.get(Settings.KEY_UDPXY_URL)
+                or config.get('udpxy', {}).get('url', 'http://localhost:3680'))
+
     runtime_value = get_runtime_config('udpxy_url')
     if runtime_value:
         return runtime_value
-    return config.get('udpxy', {}).get('url', 'http://localhost:4022')
+    return config.get('udpxy', {}).get('url', 'http://localhost:3680')
 
 
 def get_heartbeat_interval_seconds():
