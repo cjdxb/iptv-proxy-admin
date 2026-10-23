@@ -361,8 +361,6 @@ import {
   Microphone,
   FullScreen
 } from '@element-plus/icons-vue'
-import mpegts from 'mpegts.js'
-import Hls from 'hls.js'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
@@ -386,6 +384,7 @@ const previewError = ref('')
 const previewMuted = ref(false)
 let previewPlayer = null
 let previewHls = null
+let previewRequestId = 0
 
 // 筛选
 const filters = reactive({
@@ -586,6 +585,7 @@ function handleSelectionChange(selection) {
 // 打开频道预览
 async function openPreview(channel) {
   stopPreview()
+  const requestId = previewRequestId
   previewChannel.value = channel
   previewDialogVisible.value = true
   previewLoading.value = true
@@ -593,6 +593,7 @@ async function openPreview(channel) {
   previewMuted.value = false
 
   await nextTick()
+  if (requestId !== previewRequestId || !previewDialogVisible.value) return
 
   const token = authStore.user?.token
   if (!token) {
@@ -603,7 +604,21 @@ async function openPreview(channel) {
 
   const streamUrl = `/api/proxy/stream/${channel.id}?token=${encodeURIComponent(token)}`
   const isHls = /\.m3u8(?:[?#]|$)/i.test(channel.url)
+  let engine
+  try {
+    const module = isHls ? await import('hls.js') : await import('mpegts.js')
+    engine = module.default
+  } catch {
+    if (requestId !== previewRequestId || !previewDialogVisible.value) return
+    previewLoading.value = false
+    previewError.value = '播放器加载失败，请检查网络连接后重试'
+    return
+  }
+  // A closed or replaced preview must not start after its download completes.
+  if (requestId !== previewRequestId || !previewDialogVisible.value || !previewVideoRef.value) return
+
   if (isHls) {
+    const Hls = engine
     const video = previewVideoRef.value
     const play = async () => {
       try {
@@ -640,6 +655,7 @@ async function openPreview(channel) {
     return
   }
 
+  const mpegts = engine
   if (!mpegts.isSupported()) {
     previewLoading.value = false
     previewError.value = '当前浏览器不支持该视频格式，请使用最新版 Chrome、Edge 或 Firefox'
@@ -700,6 +716,7 @@ async function openPreviewFullscreen() {
 
 // 停止预览并释放流连接
 function stopPreview() {
+  previewRequestId += 1
   if (previewHls) {
     previewHls.destroy()
     previewHls = null

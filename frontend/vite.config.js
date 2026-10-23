@@ -13,11 +13,22 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION__: JSON.stringify(pkg.version)
     },
     build: {
+      // The full HLS distribution is ~595 kB and is loaded only for previews.
+      chunkSizeWarningLimit: 650,
       rollupOptions: {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) {
               return
+            }
+
+            // Keep the preview engines out of the shared application vendor chunk.
+            if (id.includes('/hls.js/')) {
+              return 'hls'
+            }
+
+            if (id.includes('/mpegts.js/')) {
+              return 'mpegts'
             }
 
             if (id.includes('/@element-plus/icons-vue/')) {
